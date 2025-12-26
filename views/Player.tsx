@@ -244,15 +244,22 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource }) => {
                             hls.loadSource(video.src);
                             hls.attachMedia(video);
                             hls.on(window.Hls.Events.MANIFEST_PARSED, () => {
-                                // Restore history time on first load (usually triggered by user click)
+                                // Restore history time
                                 if (historyTimeRef.current > 0) {
                                     video.currentTime = historyTimeRef.current;
+                                }
+                                // Aggressively restore playback rate here as well
+                                if (playbackRateRef.current !== 1) {
+                                    video.playbackRate = playbackRateRef.current;
                                 }
                             });
                         } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
                              video.src = video.src;
                              if (historyTimeRef.current > 0) {
                                  video.currentTime = historyTimeRef.current;
+                             }
+                             if (playbackRateRef.current !== 1) {
+                                 video.playbackRate = playbackRateRef.current;
                              }
                         }
                     }
@@ -264,11 +271,11 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource }) => {
 
         // --- Event Listeners ---
 
-        // Restore playback rate as early as possible (loadedmetadata often fires before canplay)
+        // Restore playback rate
         dp.on('loadedmetadata', () => {
              if (playbackRateRef.current !== 1) {
                  dp.video.playbackRate = playbackRateRef.current;
-                 // Force UI update if DPlayer doesn't auto-detect
+                 // Sync DPlayer UI
                  if (dp.controller && dp.controller.updateSpeed) {
                      dp.controller.updateSpeed(playbackRateRef.current);
                  }
@@ -276,11 +283,9 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource }) => {
         });
 
         dp.on('canplay', () => {
-             // Backup restore in case loadedmetadata missed it
              if (Math.abs(dp.video.playbackRate - playbackRateRef.current) > 0.1) {
                  dp.video.playbackRate = playbackRateRef.current;
              }
-             // Fallback seek if HLS event missed it
              if (Math.abs(dp.video.currentTime - historyTimeRef.current) > 5 && historyTimeRef.current > 0) {
                  dp.seek(historyTimeRef.current);
              }
@@ -292,7 +297,7 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource }) => {
             }
         });
 
-        // IMPORTANT: Keep track of playback rate continuously
+        // Track playback rate changes
         dp.on('ratechange', () => {
             if (dp.video) {
                 playbackRateRef.current = dp.video.playbackRate;
@@ -322,6 +327,11 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource }) => {
     return () => {
         isMounted = false;
         if (dpRef.current) {
+            // Critical: Save current playback rate before destroying
+            // This handles cases where ratechange might not have fired or was about to fire
+            if (dpRef.current.video) {
+                playbackRateRef.current = dpRef.current.video.playbackRate;
+            }
             dpRef.current.destroy();
             dpRef.current = null;
         }
