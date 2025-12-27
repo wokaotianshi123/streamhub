@@ -31,6 +31,28 @@ const HLS_CONFIG = {
     maxBufferHole: 0.5,
 };
 
+// --- Helper: Dynamic Script Loader ---
+const loadScript = (src: string): Promise<void> => {
+    return new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = src;
+        script.async = true;
+        script.onload = () => resolve();
+        script.onerror = () => reject(new Error(`Failed to load ${src}`));
+        document.head.appendChild(script);
+    });
+};
+
+const waitForGlobal = async (key: 'Artplayer' | 'Hls', timeout = 3000): Promise<boolean> => {
+    if (window[key]) return true;
+    const start = Date.now();
+    while (Date.now() - start < timeout) {
+        await new Promise(r => setTimeout(r, 100));
+        if (window[key]) return true;
+    }
+    return false;
+};
+
 // --- Helper: Fetch and Clean M3U8 (Ad Removal) ---
 const fetchAndCleanM3u8 = async (url: string, depth = 0): Promise<{ content: string; removedCount: number; log: string }> => {
     if (depth > 3) throw new Error("Redirect loop detected in M3U8 playlist");
@@ -139,6 +161,8 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource }) => {
   const [currentUrl, setCurrentUrl] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [cleanStatus, setCleanStatus] = useState<string>('');
+  // Default aspect ratio 16:9 (56.25%)
+  const [playerRatio, setPlayerRatio] = useState<number>(56.25);
   
   const containerRef = useRef<HTMLDivElement>(null);
   const artRef = useRef<any>(null);
@@ -165,6 +189,7 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource }) => {
     const loadDetails = async () => {
       if (!currentSource.api) return;
       setLoading(true);
+      setPlayerRatio(56.25); // Reset ratio on new movie
       
       const historyItem = getMovieHistory(movieId);
       if (historyItem && historyItem.currentTime) {
@@ -193,14 +218,44 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource }) => {
     let isMounted = true;
 
     const initPlayer = async () => {
-        // Cleanup previous instance logic handled in cleanup function, 
-        // but we clean blob here to ensure fresh start
+        // Cleanup previous instance
         if (blobUrlRef.current) {
             URL.revokeObjectURL(blobUrlRef.current);
             blobUrlRef.current = null;
         }
         
         setCleanStatus('');
+
+        // Ensure libraries are loaded
+        try {
+            // First pass: Wait for index.html scripts
+            let artReady = await waitForGlobal('Artplayer', 3000);
+            let hlsReady = await waitForGlobal('Hls', 3000);
+
+            // Second pass: Load fallbacks if missing
+            if (!artReady) {
+                 console.warn("Artplayer missing, attempting fallback load...");
+                 await loadScript("https://unpkg.com/artplayer/dist/artplayer.js");
+                 artReady = await waitForGlobal('Artplayer', 5000);
+            }
+            if (!hlsReady) {
+                 console.warn("Hls missing, attempting fallback load...");
+                 await loadScript("https://unpkg.com/hls.js/dist/hls.min.js");
+                 hlsReady = await waitForGlobal('Hls', 5000);
+            }
+            
+            if (!artReady || !hlsReady) {
+                 setCleanStatus('核心组件加载超时，请刷新重试');
+                 if (!isMounted) return;
+                 return; 
+            }
+        } catch (e) {
+            console.error("Script load error", e);
+            setCleanStatus('组件加载错误');
+            return;
+        }
+
+        if (!isMounted) return;
 
         let finalUrl = currentUrl;
         
@@ -228,8 +283,10 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource }) => {
 
         if (!isMounted) return;
 
+        const ArtplayerConstructor = window.Artplayer;
+
         // Init Artplayer
-        const art = new window.Artplayer({
+        const art = new ArtplayerConstructor({
             container: containerRef.current,
             url: finalUrl,
             type: 'm3u8',
@@ -238,7 +295,7 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource }) => {
             muted: false,
             autoplay: true,
             pip: true,
-            autoSize: true,
+            autoSize: false, // Use CSS padding hack for container sizing
             autoMini: true,
             screenshot: true,
             setting: true,
@@ -259,6 +316,8 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource }) => {
             lang: 'zh-cn',
             moreVideoAttr: {
                 crossOrigin: 'anonymous',
+                playsInline: true,
+                'webkit-playsinline': 'true',
             },
             customType: {
                 m3u8: function (video: HTMLVideoElement, url: string, art: any) {
@@ -303,9 +362,21 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource }) => {
         // --- Event Listeners ---
 
         art.on('ready', () => {
-            // Backup restoration in case HLS event missed or native playback
+            // Backup restoration
             if (playbackRateRef.current !== 1) {
                 art.playbackRate = playbackRateRef.current;
+            }
+        });
+
+        // Dynamic Aspect Ratio Adjustment
+        art.on('video:loadedmetadata', () => {
+            const v = art.video;
+            if (v && v.videoWidth && v.videoHeight) {
+                let ratio = (v.videoHeight / v.videoWidth) * 100;
+                // Cap ratio to prevent layout breaking on vertical videos
+                if (ratio > 100) ratio = 100; // Max 1:1
+                if (ratio < 30) ratio = 30; // Min ~3:1
+                setPlayerRatio(ratio);
             }
         });
 
@@ -378,10 +449,13 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource }) => {
   return (
     <main className="container mx-auto px-4 py-6 space-y-8 animate-fadeIn">
       {/* Player Section */}
-      <section className="relative w-full rounded-2xl overflow-hidden shadow-2xl bg-black aspect-video sm:aspect-[16/9] lg:aspect-[21/9] ring-1 ring-gray-800">
+      <section 
+        className="relative w-full rounded-2xl overflow-hidden shadow-2xl bg-black ring-1 ring-gray-800 transition-all duration-500 ease-in-out"
+        style={{ paddingBottom: `${playerRatio}%` }}
+      >
          {currentUrl ? (
              <>
-                <div ref={containerRef} className="w-full h-full"></div>
+                <div ref={containerRef} className="absolute inset-0 w-full h-full"></div>
                 
                 {/* Status Overlay */}
                 {cleanStatus && (
@@ -394,7 +468,7 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource }) => {
                 )}
              </>
          ) : (
-             <div className="w-full h-full flex items-center justify-center text-white bg-gray-900">
+             <div className="absolute inset-0 w-full h-full flex items-center justify-center text-white bg-gray-900">
                  <div className="text-center">
                     <Icon name="error_outline" className="text-5xl text-gray-600 mb-2" />
                     <p className="text-gray-400">暂无播放资源</p>
