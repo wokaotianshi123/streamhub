@@ -1,4 +1,4 @@
-# StreamHub Vision
+# StreamHub Vision 采集站播放工具。目前图片显示尚未解决
 
 A modern video streaming application built with React and Vite, optimized for Vercel deployment.
 
