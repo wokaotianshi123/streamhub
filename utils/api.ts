@@ -67,34 +67,42 @@ const fetchViaProxy = async (targetUrl: string): Promise<string> => {
 
 /**
  * Format Image URL
- * Minimal processing: just fix protocol relative URLs.
- * DO NOT proxy images unless absolutely necessary.
+ * DIRECT EXTRACTION: No proxying for images.
+ * Fixes protocol-relative URLs and removes CMS variables.
  */
 const formatImageUrl = (url: any): string => {
     if (!url || typeof url !== 'string') return '';
     let cleanUrl = url.trim();
     
-    // Remove CMS vars
+    // Remove common CMS placeholders/variables like {mac_url}
     cleanUrl = cleanUrl.replace(/\{mac_url\}/gi, '');
     
     // Handle Protocol Relative
     if (cleanUrl.startsWith('//')) {
         return `https:${cleanUrl}`;
     }
-    
-    // If it's http, leave it (browser might block mixed content, but proxying images is heavy)
-    // Most sources support https now.
+
+    // Ensure it starts with http if it's not relative
+    if (!cleanUrl.startsWith('http') && cleanUrl.length > 10) {
+        // If it doesn't start with http but looks like a domain path, add https
+        if (cleanUrl.includes('.') && cleanUrl.includes('/')) {
+             // Basic check to see if it's a domain-start string without protocol
+             const firstPart = cleanUrl.split('/')[0];
+             if (firstPart.includes('.') && !firstPart.includes(':')) {
+                 return `https://${cleanUrl}`;
+             }
+        }
+    }
     
     return cleanUrl;
 };
 
 /**
  * Extract image from item
- * Prioritize vod_pic directly from JSON
+ * Prioritize vod_pic directly from JSON/XML
  */
-const extractImage = (item: any, apiUrl: string): string => {
-    // Priority order for image fields
-    // vod_pic is the standard for MacCMS JSON
+const extractImage = (item: any): string => {
+    // MacCMS standard fields
     const rawImage = item.vod_pic || item.vod_pic_thumb || item.vod_img || item.pic || item.img || item.picture;
     return formatImageUrl(rawImage);
 };
@@ -116,7 +124,7 @@ const sanitizeXml = (xml: string): string => {
         .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "");
 };
 
-const parseMacCMSXml = (xmlText: string, apiUrl: string) => {
+const parseMacCMSXml = (xmlText: string) => {
     try {
         const cleanXml = sanitizeXml(xmlText);
         const parser = new DOMParser();
@@ -129,8 +137,11 @@ const parseMacCMSXml = (xmlText: string, apiUrl: string) => {
             const v = videoTags[i];
             const id = getTagValue(v, ["id", "vod_id"]);
             const name = getTagValue(v, ["name", "vod_name"]);
-            const rawPic = getTagValue(v, ["pic", "vod_pic", "img", "vod_img"]);
-            const pic = formatImageUrl(rawPic); // Use simplified format
+            
+            // For XML parsing, we pass a fake object to extractImage that mimics the structure
+            const pic = extractImage({
+                vod_pic: getTagValue(v, ["pic", "vod_pic", "img", "vod_img"])
+            });
 
             const type = getTagValue(v, ["type", "type_name"]);
             const year = getTagValue(v, ["year", "vod_year"]);
@@ -252,7 +263,7 @@ export const fetchVideoList = async (apiUrl: string, typeId: string = '', page: 
                             id: v.vod_id.toString(),
                             vod_id: v.vod_id,
                             title: v.vod_name,
-                            image: extractImage(v, apiUrl),
+                            image: extractImage(v),
                             genre: v.type_name || '',
                             year: v.vod_year || new Date().getFullYear().toString(),
                             badge: v.vod_remarks || '',
@@ -265,7 +276,7 @@ export const fetchVideoList = async (apiUrl: string, typeId: string = '', page: 
         }
     } catch(e) {}
 
-    return parseMacCMSXml(content, apiUrl);
+    return parseMacCMSXml(content);
 
   } catch (error) {
     console.error("Fetch List Error:", error);
@@ -290,7 +301,7 @@ export const searchVideos = async (apiUrl: string, query: string): Promise<Movie
                 id: item.vod_id.toString(),
                 vod_id: item.vod_id,
                 title: item.vod_name,
-                image: extractImage(item, apiUrl),
+                image: extractImage(item),
                 genre: item.type_name || '其他',
                 year: item.vod_year || '',
                 badge: item.vod_remarks || 'HD',
@@ -300,7 +311,7 @@ export const searchVideos = async (apiUrl: string, query: string): Promise<Movie
       }
     } catch (e) {}
     
-    const { videos } = parseMacCMSXml(content, apiUrl);
+    const { videos } = parseMacCMSXml(content);
     return videos;
     
   } catch (error) {
@@ -327,7 +338,7 @@ export const fetchVideoDetails = async (apiUrl: string, ids: string): Promise<Mo
                     id: item.vod_id.toString(),
                     vod_id: item.vod_id,
                     title: item.vod_name,
-                    image: extractImage(item, apiUrl),
+                    image: extractImage(item),
                     genre: item.type_name,
                     year: item.vod_year,
                     badge: item.vod_remarks,
@@ -341,7 +352,7 @@ export const fetchVideoDetails = async (apiUrl: string, ids: string): Promise<Mo
         }
     } catch(e) {}
     
-    const { videos } = parseMacCMSXml(content, apiUrl);
+    const { videos } = parseMacCMSXml(content);
     return videos.length > 0 ? videos[0] : null;
 
   } catch (error) {

@@ -16,6 +16,8 @@ export interface Movie {
   vod_director?: string;
   // User data
   currentTime?: number;
+  currentEpisodeUrl?: string; // New: Store specific episode
+  currentEpisodeName?: string; // New: Store episode name
   // Aggregate Search Data
   sourceApi?: string;
   sourceName?: string;

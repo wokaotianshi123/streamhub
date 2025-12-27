@@ -161,12 +161,12 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource }) => {
   const [currentUrl, setCurrentUrl] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [cleanStatus, setCleanStatus] = useState<string>('');
-  // Default aspect ratio 16:9 (56.25%)
   const [playerRatio, setPlayerRatio] = useState<number>(56.25);
   
   const containerRef = useRef<HTMLDivElement>(null);
   const artRef = useRef<any>(null);
   const historyTimeRef = useRef<number>(0);
+  const hasAppliedHistorySeek = useRef<boolean>(false);
   const blobUrlRef = useRef<string | null>(null);
   const playbackRateRef = useRef<number>(1);
   const playListRef = useRef<{name: string, url: string}[]>([]);
@@ -189,11 +189,14 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource }) => {
     const loadDetails = async () => {
       if (!currentSource.api) return;
       setLoading(true);
-      setPlayerRatio(56.25); // Reset ratio on new movie
+      setPlayerRatio(56.25);
+      hasAppliedHistorySeek.current = false; // Reset seek flag for new movie
       
       const historyItem = getMovieHistory(movieId);
       if (historyItem && historyItem.currentTime) {
         historyTimeRef.current = historyItem.currentTime;
+      } else {
+        historyTimeRef.current = 0;
       }
 
       const data = await fetchVideoDetails(currentSource.api, movieId);
@@ -201,7 +204,17 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource }) => {
         setDetails(data);
         const parsedEpisodes = parsePlayUrl(data.vod_play_url || '');
         setPlayList(parsedEpisodes);
-        if (parsedEpisodes.length > 0) {
+        
+        // Try to restore previous episode if available in history
+        if (historyItem?.currentEpisodeUrl) {
+            const found = parsedEpisodes.find(ep => ep.url === historyItem.currentEpisodeUrl);
+            if (found) {
+                setCurrentUrl(found.url);
+            } else if (parsedEpisodes.length > 0) {
+                setCurrentUrl(parsedEpisodes[0].url);
+                historyTimeRef.current = 0; // Reset progress if episode changed
+            }
+        } else if (parsedEpisodes.length > 0) {
             setCurrentUrl(parsedEpisodes[0].url);
         }
       }
@@ -218,40 +231,34 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource }) => {
     let isMounted = true;
 
     const initPlayer = async () => {
-        // Cleanup previous instance
         if (blobUrlRef.current) {
             URL.revokeObjectURL(blobUrlRef.current);
             blobUrlRef.current = null;
         }
         
         setCleanStatus('');
+        // NOTE: Do not reset hasAppliedHistorySeek here if it's the SAME movieId 
+        // because it's already reset in the detail-loading effect.
 
-        // Ensure libraries are loaded
         try {
-            // First pass: Wait for index.html scripts
             let artReady = await waitForGlobal('Artplayer', 3000);
             let hlsReady = await waitForGlobal('Hls', 3000);
 
-            // Second pass: Load fallbacks if missing
             if (!artReady) {
-                 console.warn("Artplayer missing, attempting fallback load...");
                  await loadScript("https://unpkg.com/artplayer/dist/artplayer.js");
                  artReady = await waitForGlobal('Artplayer', 5000);
             }
             if (!hlsReady) {
-                 console.warn("Hls missing, attempting fallback load...");
                  await loadScript("https://unpkg.com/hls.js/dist/hls.min.js");
                  hlsReady = await waitForGlobal('Hls', 5000);
             }
             
             if (!artReady || !hlsReady) {
-                 setCleanStatus('核心组件加载超时，请刷新重试');
-                 if (!isMounted) return;
+                 setCleanStatus('播放组件加载失败');
                  return; 
             }
         } catch (e) {
-            console.error("Script load error", e);
-            setCleanStatus('组件加载错误');
+            setCleanStatus('核心组件异常');
             return;
         }
 
@@ -259,10 +266,9 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource }) => {
 
         let finalUrl = currentUrl;
         
-        // Try M3U8 Cleaning
         if (currentUrl.includes('.m3u8')) {
             try {
-                setCleanStatus('正在智能分析媒体流...');
+                setCleanStatus('正在解析媒体流...');
                 const result = await fetchAndCleanM3u8(currentUrl);
                 if (!isMounted) return;
 
@@ -272,46 +278,44 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource }) => {
                     blobUrlRef.current = finalUrl;
                     setCleanStatus(`✅ 净化成功: ${result.log}`);
                 } else {
-                    setCleanStatus(''); // Clear if no cleaning needed
+                    setCleanStatus('');
                 }
             } catch (e) {
                 if (!isMounted) return;
-                console.warn('Cleaning skipped:', e);
                 setCleanStatus('');
             }
         }
 
         if (!isMounted) return;
 
+        // Clean up previous instance before creating new one
+        if (artRef.current) {
+            artRef.current.destroy(false);
+        }
+
         const ArtplayerConstructor = window.Artplayer;
 
-        // Init Artplayer
         const art = new ArtplayerConstructor({
             container: containerRef.current,
             url: finalUrl,
             type: 'm3u8',
             volume: 0.7,
             isLive: false,
-            muted: false,
             autoplay: true,
             pip: true,
-            autoSize: false, // Use CSS padding hack for container sizing
+            autoSize: false,
             autoMini: true,
             screenshot: true,
             setting: true,
-            loop: false,
-            flip: true,
             playbackRate: true,
             aspectRatio: true,
             fullscreen: true,
             fullscreenWeb: true,
-            subtitleOffset: true,
             miniProgressBar: true,
             mutex: true,
             backdrop: true,
             playsInline: true,
-            autoPlayback: true,
-            airplay: true,
+            autoPlayback: false, // Disable built-in history to use our own
             theme: '#2196F3',
             lang: 'zh-cn',
             moreVideoAttr: {
@@ -320,38 +324,39 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource }) => {
                 'webkit-playsinline': 'true',
             },
             customType: {
-                m3u8: function (video: HTMLVideoElement, url: string, art: any) {
+                m3u8: function (video: HTMLVideoElement, url: string, artInstance: any) {
                     if (window.Hls.isSupported()) {
-                        if (art.hls) art.hls.destroy();
+                        if (artInstance.hls) artInstance.hls.destroy();
                         const hls = new window.Hls(HLS_CONFIG);
                         hls.loadSource(url);
                         hls.attachMedia(video);
-                        art.hls = hls;
+                        artInstance.hls = hls;
                         
-                        // Restore state when HLS manifest is parsed (Most reliable)
-                        hls.on(window.Hls.Events.MANIFEST_PARSED, () => {
-                            if (historyTimeRef.current > 0) {
-                                art.currentTime = historyTimeRef.current;
+                        // Robust Seek on Manifest Parsed
+                        hls.once(window.Hls.Events.MANIFEST_PARSED, () => {
+                            if (historyTimeRef.current > 0 && !hasAppliedHistorySeek.current) {
+                                // Apply seek with a tiny delay to ensure video engine is ready
+                                setTimeout(() => {
+                                    artInstance.currentTime = historyTimeRef.current;
+                                    hasAppliedHistorySeek.current = true;
+                                    artInstance.notice.show = `已跳转到上次观看: ${Math.floor(historyTimeRef.current / 60)}分${Math.floor(historyTimeRef.current % 60)}秒`;
+                                }, 100);
                             }
-                            // Restore playback rate
                             if (playbackRateRef.current !== 1) {
-                                art.playbackRate = playbackRateRef.current;
+                                artInstance.playbackRate = playbackRateRef.current;
                             }
-                            art.play();
+                            artInstance.play();
                         });
 
-                        art.on('destroy', () => hls.destroy());
+                        artInstance.on('destroy', () => hls.destroy());
                     } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
                         video.src = url;
-                        // iOS Safari native support
-                        if (historyTimeRef.current > 0) {
-                             video.currentTime = historyTimeRef.current;
-                        }
-                        if (playbackRateRef.current !== 1) {
-                             video.playbackRate = playbackRateRef.current;
-                        }
-                    } else {
-                        art.notice.show = '不支持的播放格式: m3u8';
+                        video.addEventListener('loadedmetadata', () => {
+                            if (historyTimeRef.current > 0 && !hasAppliedHistorySeek.current) {
+                                video.currentTime = historyTimeRef.current;
+                                hasAppliedHistorySeek.current = true;
+                            }
+                        });
                     }
                 }
             },
@@ -359,58 +364,48 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource }) => {
 
         artRef.current = art;
 
-        // --- Event Listeners ---
-
-        art.on('ready', () => {
-            // Backup restoration
-            if (playbackRateRef.current !== 1) {
-                art.playbackRate = playbackRateRef.current;
+        // Secondary Seek Logic: Triggered when video is ready to play
+        art.on('video:canplay', () => {
+            if (historyTimeRef.current > 0 && !hasAppliedHistorySeek.current) {
+                art.currentTime = historyTimeRef.current;
+                hasAppliedHistorySeek.current = true;
+                art.notice.show = `已跳转到上次观看: ${Math.floor(historyTimeRef.current / 60)}分${Math.floor(historyTimeRef.current % 60)}秒`;
             }
         });
 
-        // Dynamic Aspect Ratio Adjustment
         art.on('video:loadedmetadata', () => {
             const v = art.video;
             if (v && v.videoWidth && v.videoHeight) {
                 let ratio = (v.videoHeight / v.videoWidth) * 100;
-                // Cap ratio to prevent layout breaking on vertical videos
-                if (ratio > 100) ratio = 100; // Max 1:1
-                if (ratio < 30) ratio = 30; // Min ~3:1
+                if (ratio > 100) ratio = 100;
+                if (ratio < 30) ratio = 30;
                 setPlayerRatio(ratio);
             }
         });
 
-        // Track playback rate changes
         art.on('video:ratechange', () => {
             playbackRateRef.current = art.playbackRate;
         });
 
-        // Track progress
         art.on('video:timeupdate', () => {
             if (art.currentTime > 5) {
-                updateHistoryProgress(movieId, art.currentTime);
+                const ep = playListRef.current.find(item => item.url === currentUrl);
+                updateHistoryProgress(movieId, art.currentTime, currentUrl, ep?.name);
             }
         });
 
-        // Auto Next Episode
         art.on('video:ended', () => {
             const list = playListRef.current;
             const currentIndex = list.findIndex(ep => ep.url === currentUrl);
             
             if (currentIndex !== -1 && currentIndex < list.length - 1) {
                 const nextEp = list[currentIndex + 1];
-                
-                // IMPORTANT: Capture settings again to be safe
-                playbackRateRef.current = art.playbackRate;
-
                 art.notice.show = `即将播放下一集: ${nextEp.name}`;
-                
                 setTimeout(() => {
-                    historyTimeRef.current = 0; // Reset history for new episode
-                    setCurrentUrl(nextEp.url); // Trigger useEffect re-run
+                    historyTimeRef.current = 0;
+                    hasAppliedHistorySeek.current = true; // No seek needed for next episode
+                    setCurrentUrl(nextEp.url);
                 }, 1000);
-            } else {
-                art.notice.show = '播放结束';
             }
         });
     };
@@ -420,7 +415,6 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource }) => {
     return () => {
         isMounted = false;
         if (artRef.current && artRef.current.destroy) {
-            // Save state before destroy
             playbackRateRef.current = artRef.current.playbackRate;
             artRef.current.destroy(false);
             artRef.current = null;
@@ -448,7 +442,6 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource }) => {
 
   return (
     <main className="container mx-auto px-4 py-6 space-y-8 animate-fadeIn">
-      {/* Player Section */}
       <section 
         className="relative w-full rounded-2xl overflow-hidden shadow-2xl bg-black ring-1 ring-gray-800 transition-all duration-500 ease-in-out"
         style={{ paddingBottom: `${playerRatio}%` }}
@@ -456,8 +449,6 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource }) => {
          {currentUrl ? (
              <>
                 <div ref={containerRef} className="absolute inset-0 w-full h-full"></div>
-                
-                {/* Status Overlay */}
                 {cleanStatus && (
                     <div className="absolute top-4 left-4 z-50 pointer-events-none">
                         <div className="bg-black/70 text-green-400 border border-green-500/30 px-3 py-1.5 rounded-lg text-xs backdrop-blur-md shadow-lg animate-fadeIn flex items-center gap-2">
@@ -477,7 +468,6 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource }) => {
          )}
       </section>
 
-      {/* Info Section */}
       <section className="grid grid-cols-1 md:grid-cols-3 gap-8">
         <div className="md:col-span-2 space-y-6">
              <div>
@@ -489,7 +479,6 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource }) => {
                 </div>
              </div>
              
-             {/* Content */}
              <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm">
                 <h3 className="font-semibold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
                     <Icon name="description" className="text-blue-500" /> 剧情简介
@@ -510,7 +499,6 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource }) => {
              </div>
         </div>
 
-        {/* Playlist Section */}
         <div className="bg-white dark:bg-slate-800 rounded-xl p-5 border border-gray-100 dark:border-gray-700 h-fit max-h-[600px] flex flex-col shadow-sm">
             <h3 className="font-bold mb-4 text-gray-900 dark:text-white flex items-center justify-between">
                 <span className="flex items-center gap-2"><Icon name="playlist_play" className="text-blue-500" /> 选集</span>
@@ -523,7 +511,8 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource }) => {
                             key={index}
                             onClick={() => {
                                 setCurrentUrl(ep.url);
-                                historyTimeRef.current = 0; // Reset history for new episode
+                                historyTimeRef.current = 0;
+                                hasAppliedHistorySeek.current = true;
                             }}
                             className={`text-xs py-2.5 px-2 rounded-lg transition-all truncate border font-medium ${
                                 currentUrl === ep.url 

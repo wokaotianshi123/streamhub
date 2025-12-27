@@ -35,10 +35,18 @@ export const addToHistory = (movie: Movie): void => {
     let newItem = { ...movie };
     
     if (existingIndex !== -1) {
-        newItem.currentTime = history[existingIndex].currentTime || 0;
+        // Preserve existing progress if the new object doesn't have it (or has 0)
+        // But if the new object explicitly has time (e.g. from history click), use it? 
+        // Actually, usually we want to keep the LATEST saved time from storage unless we are resetting.
+        const existing = history[existingIndex];
+        newItem.currentTime = existing.currentTime || 0;
+        newItem.currentEpisodeUrl = existing.currentEpisodeUrl;
+        newItem.currentEpisodeName = existing.currentEpisodeName;
+        
         history.splice(existingIndex, 1);
     } else {
-        newItem.currentTime = 0;
+        // New item defaults
+        if (newItem.currentTime === undefined) newItem.currentTime = 0;
     }
 
     const newHistory = [newItem, ...history].slice(0, MAX_HISTORY_ITEMS);
@@ -48,13 +56,16 @@ export const addToHistory = (movie: Movie): void => {
   }
 };
 
-export const updateHistoryProgress = (movieId: string, time: number): void => {
+export const updateHistoryProgress = (movieId: string, time: number, episodeUrl?: string, episodeName?: string): void => {
   try {
     const history = getHistory();
     const index = history.findIndex(m => m.id === movieId);
     
     if (index !== -1) {
       history[index].currentTime = time;
+      if (episodeUrl) history[index].currentEpisodeUrl = episodeUrl;
+      if (episodeName) history[index].currentEpisodeName = episodeName;
+      
       localStorage.setItem(STORAGE_KEY, JSON.stringify(history));
     }
   } catch (error) {

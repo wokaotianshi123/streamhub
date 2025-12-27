@@ -32,12 +32,11 @@ const Header: React.FC<HeaderProps> = ({ currentView, setView, onBack, onSearch 
           >
             <div className={`mr-1 sm:mr-2 rounded-lg flex items-center justify-center transition-all duration-300 ${currentView === 'SEARCH' ? 'w-8 h-8 sm:w-10 sm:h-10 bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'text-blue-600'}`}>
               <Icon 
-                name={currentView === 'PLAYER' ? 'play_circle' : 'play_circle_filled'} 
+                name="play_circle_filled" 
                 className={currentView === 'SEARCH' ? 'text-xl sm:text-2xl' : 'text-2xl sm:text-3xl'}
-                type={currentView === 'PLAYER' ? 'outlined' : 'round'}
+                type="round"
               />
             </div>
-            {/* Title Text - Restored on mobile with smaller font */}
             <h1 className="text-sm sm:text-xl font-bold tracking-tight text-gray-900 dark:text-white group-hover:text-blue-600 transition-colors whitespace-nowrap">
               StreamHub
               <span className="hidden sm:inline">{currentView === 'HOME' && ' 视界'}</span>
@@ -62,7 +61,6 @@ const Header: React.FC<HeaderProps> = ({ currentView, setView, onBack, onSearch 
 
           {/* Actions Section */}
           <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
-            {/* Back Button (Replaces Theme Toggle) */}
             {currentView !== 'HOME' && (
               <button 
                 type="button"
