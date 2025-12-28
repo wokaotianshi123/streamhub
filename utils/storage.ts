@@ -1,7 +1,9 @@
+
 import { Movie, Source } from '../types';
 
 const STORAGE_KEY = 'streamhub_watch_history';
 const CUSTOM_SOURCES_KEY = 'streamhub_custom_sources';
+const LAST_SOURCE_KEY = 'streamhub_last_source_api';
 const MAX_HISTORY_ITEMS = 50;
 
 // --- History Management ---
@@ -36,8 +38,6 @@ export const addToHistory = (movie: Movie): void => {
     
     if (existingIndex !== -1) {
         // Preserve existing progress if the new object doesn't have it (or has 0)
-        // But if the new object explicitly has time (e.g. from history click), use it? 
-        // Actually, usually we want to keep the LATEST saved time from storage unless we are resetting.
         const existing = history[existingIndex];
         newItem.currentTime = existing.currentTime || 0;
         newItem.currentEpisodeUrl = existing.currentEpisodeUrl;
@@ -129,4 +129,14 @@ export const removeCustomSourceFromStorage = (api: string): Source[] => {
     console.error("Error removing custom source", e);
     return [];
   }
+};
+
+// --- Last Used Source Management ---
+
+export const getLastUsedSourceApi = (): string | null => {
+  return localStorage.getItem(LAST_SOURCE_KEY);
+};
+
+export const setLastUsedSourceApi = (api: string): void => {
+  localStorage.setItem(LAST_SOURCE_KEY, api);
 };
