@@ -4,7 +4,7 @@ import Footer from './components/Footer';
 import Home from './views/Home';
 import Search from './views/Search';
 import Player from './views/Player';
-import { ViewState, Source, HomeViewState, SearchViewState } from './types';
+import { ViewState, Source, HomeViewState, SearchViewState, Movie } from './types';
 import { fetchSources } from './utils/api';
 import { getCustomSources, addCustomSourceToStorage, removeCustomSourceFromStorage } from './utils/storage';
 
@@ -34,20 +34,15 @@ const App: React.FC = () => {
     hasSearched: false
   });
 
-  // Theme state initialization
   const [isDark, setIsDark] = useState(() => {
     try {
       if (typeof window !== 'undefined') {
         const savedTheme = localStorage.getItem('streamhub_theme');
-        if (savedTheme) {
-          return savedTheme === 'dark';
-        }
+        if (savedTheme) return savedTheme === 'dark';
         return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
       }
       return false;
-    } catch (e) {
-      return false;
-    }
+    } catch (e) { return false; }
   });
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -58,37 +53,25 @@ const App: React.FC = () => {
   const [customSources, setCustomSources] = useState<Source[]>([]);
   const [currentSource, setCurrentSource] = useState<Source>({ name: '加载中...', api: '' });
 
-  // Computed combined sources
   const sources = [...defaultSources, ...customSources];
 
-  // Sync theme
   useEffect(() => {
-    try {
-        const root = document.documentElement;
-        if (isDark) {
-            root.classList.add('dark');
-            localStorage.setItem('streamhub_theme', 'dark');
-        } else {
-            root.classList.remove('dark');
-            localStorage.setItem('streamhub_theme', 'light');
-        }
-    } catch (e) {
-        console.error("Theme Error", e);
+    const root = document.documentElement;
+    if (isDark) {
+        root.classList.add('dark');
+        localStorage.setItem('streamhub_theme', 'dark');
+    } else {
+        root.classList.remove('dark');
+        localStorage.setItem('streamhub_theme', 'light');
     }
   }, [isDark]);
 
-  // Load sources
   useEffect(() => {
     const initSources = async () => {
-        // 1. Fetch Default Sources
         const fetchedSources = await fetchSources();
         setDefaultSources(fetchedSources);
-
-        // 2. Load Custom Sources
         const localCustomSources = getCustomSources();
         setCustomSources(localCustomSources);
-
-        // 3. Set Initial Source
         if (localCustomSources.length > 0) {
            setCurrentSource(localCustomSources[0]);
         } else if (fetchedSources.length > 0) {
@@ -98,40 +81,41 @@ const App: React.FC = () => {
     initSources();
   }, []);
 
-  // Update view wrapper to save scroll position before switching
   const handleViewChange = (newView: ViewState) => {
-    // 1. Save state of current view before leaving
     if (currentView === 'HOME') {
         setHomeViewState(prev => ({ ...prev, scrollY: window.scrollY }));
     } else if (currentView === 'SEARCH') {
         setSearchViewState(prev => ({ ...prev, scrollY: window.scrollY }));
     }
-
-    // 2. Track history for Player return
-    if (newView === 'PLAYER') {
-        setPreviousView(currentView);
-    }
-
-    // 3. Switch view
+    if (newView === 'PLAYER') setPreviousView(currentView);
     setCurrentView(newView);
   };
 
   const handleBack = useCallback(() => {
-    if (currentView === 'PLAYER') {
-        setCurrentView(previousView);
-    } else if (currentView === 'SEARCH') {
-        setCurrentView('HOME');
-    }
+    if (currentView === 'PLAYER') setCurrentView(previousView);
+    else if (currentView === 'SEARCH') setCurrentView('HOME');
   }, [currentView, previousView]);
 
   const handleSearch = (query: string) => {
     setSearchQuery(query);
-    // Also update search state query
     setSearchViewState(prev => ({ ...prev, query: query, hasSearched: false }));
   };
 
-  const handleSelectMovie = (id: string) => {
-    setSelectedMovieId(id);
+  /**
+   * 增强型选片逻辑：
+   * 如果电影对象携带了 sourceApi，且与当前全局源不一致，则自动切换源。
+   */
+  const handleSelectMovie = (movie: Movie) => {
+    setSelectedMovieId(movie.id);
+    if (movie.sourceApi && movie.sourceApi !== currentSource.api) {
+        const target = sources.find(s => s.api === movie.sourceApi);
+        if (target) {
+            setCurrentSource(target);
+        } else {
+            // 如果是历史记录里的源，但当前列表没找到（可能被删了），则手动构建一个临时源
+            setCurrentSource({ name: movie.sourceName || '历史资源', api: movie.sourceApi });
+        }
+    }
   };
 
   const handleAddCustomSource = (name: string, api: string) => {
@@ -150,14 +134,8 @@ const App: React.FC = () => {
     }
   };
 
-  // State update helpers for children
-  const updateHomeState = (updates: Partial<HomeViewState>) => {
-      setHomeViewState(prev => ({ ...prev, ...updates }));
-  };
-
-  const updateSearchState = (updates: Partial<SearchViewState>) => {
-      setSearchViewState(prev => ({ ...prev, ...updates }));
-  };
+  const updateHomeState = (updates: Partial<HomeViewState>) => setHomeViewState(prev => ({ ...prev, ...updates }));
+  const updateSearchState = (updates: Partial<SearchViewState>) => setSearchViewState(prev => ({ ...prev, ...updates }));
 
   const renderView = () => {
     switch (currentView) {
@@ -197,19 +175,7 @@ const App: React.FC = () => {
             />
         );
       default:
-        return (
-            <Home 
-                setView={handleViewChange} 
-                onSelectMovie={handleSelectMovie} 
-                currentSource={currentSource}
-                sources={sources}
-                onSourceChange={setCurrentSource}
-                onAddCustomSource={handleAddCustomSource}
-                onRemoveCustomSource={handleRemoveCustomSource}
-                savedState={homeViewState}
-                onStateUpdate={updateHomeState}
-            />
-        );
+        return null;
     }
   };
 
@@ -221,9 +187,7 @@ const App: React.FC = () => {
         onBack={handleBack}
         onSearch={handleSearch}
       />
-      
       {renderView()}
-
       <Footer currentView={currentView} />
     </div>
   );
