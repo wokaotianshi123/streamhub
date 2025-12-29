@@ -4,10 +4,18 @@ import { Movie, Category, HomeProps, Source } from '../types';
 import MovieCard from '../components/MovieCard';
 import { Icon } from '../components/Icon';
 import { fetchVideoList, fetchDoubanSubjects } from '../utils/api';
-import { getHistory, addToHistory, clearHistory, removeFromHistory } from '../utils/storage';
+import { 
+  getHistory, 
+  addToHistory, 
+  clearHistory, 
+  removeFromHistory,
+  getCustomDoubanTags,
+  addCustomDoubanTagToStorage,
+  removeCustomDoubanTagFromStorage
+} from '../utils/storage';
 
-const MOVIE_TAGS = ['热门', '最新', '经典', '豆瓣高分', '冷门佳片', '华语', '欧美', '韩国', '日本', '动作', '喜剧', '爱情', '科幻', '悬疑', '恐怖', '治愈'];
-const TV_TAGS = ['热门', '美剧', '英剧', '韩剧', '日剧', '国产剧', '港剧', '日本动画', '综艺', '纪录片'];
+const ORIGINAL_MOVIE_TAGS = ['热门', '最新', '经典', '豆瓣高分', '冷门佳片', '华语', '欧美', '韩国', '日本', '动作', '喜剧', '爱情', '科幻', '悬疑', '恐怖', '治愈'];
+const ORIGINAL_TV_TAGS = ['热门', '美剧', '英剧', '韩剧', '日剧', '国产剧', '港剧', '日本动画', '综艺', '纪录片'];
 
 const Home: React.FC<HomeProps> = ({ 
   setView, 
@@ -30,9 +38,18 @@ const Home: React.FC<HomeProps> = ({
   const [newSourceName, setNewSourceName] = useState('');
   const [newSourceApi, setNewSourceApi] = useState('');
 
+  // 豆瓣自定义标签状态
+  const [customDoubanTags, setCustomDoubanTags] = useState<string[]>([]);
+  const [showAddTag, setShowAddTag] = useState(false);
+  const [newTagName, setNewTagName] = useState('');
+
   // 核心加载逻辑
   useEffect(() => {
     if (savedState.isDoubanMode) {
+      // 加载该类型下的自定义标签
+      const tags = getCustomDoubanTags(savedState.doubanType);
+      setCustomDoubanTags(tags);
+
       if (savedState.doubanMovies.length === 0) {
         loadDoubanData(savedState.doubanType, savedState.doubanTag, 0);
       }
@@ -52,6 +69,13 @@ const Home: React.FC<HomeProps> = ({
     }
     setHistory(getHistory());
   }, [currentSource.api, savedState.isDoubanMode, savedState.doubanType, savedState.doubanTag]);
+
+  // 切换电影/电视剧时刷新自定义标签
+  useEffect(() => {
+    if (savedState.isDoubanMode) {
+      setCustomDoubanTags(getCustomDoubanTags(savedState.doubanType));
+    }
+  }, [savedState.doubanType]);
 
   // 滚动位置恢复
   useLayoutEffect(() => {
@@ -133,7 +157,27 @@ const Home: React.FC<HomeProps> = ({
       }
   };
 
-  const currentTags = savedState.doubanType === 'movie' ? MOVIE_TAGS : TV_TAGS;
+  const handleAddTagSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (newTagName.trim()) {
+      const updated = addCustomDoubanTagToStorage(savedState.doubanType, newTagName.trim());
+      setCustomDoubanTags(updated);
+      onStateUpdate({ doubanTag: newTagName.trim(), doubanMovies: [] });
+      setNewTagName('');
+      setShowAddTag(false);
+    }
+  };
+
+  const handleRemoveTag = (e: React.MouseEvent, tag: string) => {
+    e.stopPropagation();
+    const updated = removeCustomDoubanTagFromStorage(savedState.doubanType, tag);
+    setCustomDoubanTags(updated);
+    if (savedState.doubanTag === tag) {
+      onStateUpdate({ doubanTag: '热门', doubanMovies: [] });
+    }
+  };
+
+  const originalTags = savedState.doubanType === 'movie' ? ORIGINAL_MOVIE_TAGS : ORIGINAL_TV_TAGS;
   const officialSources = sources.filter(s => !s.isCustom);
   const customSources = sources.filter(s => s.isCustom);
 
@@ -178,7 +222,6 @@ const Home: React.FC<HomeProps> = ({
                         <div className="fixed inset-0 z-10" onClick={() => setIsSourceMenuOpen(false)}></div>
                         <div className="absolute top-full right-0 mt-2 w-72 bg-white dark:bg-slate-800 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 z-20 overflow-hidden flex flex-col">
                             <div className="max-h-80 overflow-y-auto hide-scrollbar">
-                                {/* 官方源 */}
                                 <div className="px-3 py-2 text-[10px] font-bold text-gray-400 uppercase tracking-wider bg-gray-50 dark:bg-slate-900/50">推荐源</div>
                                 {officialSources.map((s, idx) => (
                                     <button key={`off-${idx}`} onClick={() => { onSourceChange(s); setIsSourceMenuOpen(false); }} className={`w-full text-left px-4 py-3 text-sm hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors border-b border-gray-50 dark:border-gray-700/50 flex items-center justify-between ${currentSource.api === s.api ? 'text-blue-600 bg-blue-50/50 dark:bg-blue-900/10' : 'text-gray-700 dark:text-gray-200'}`}>
@@ -187,7 +230,6 @@ const Home: React.FC<HomeProps> = ({
                                     </button>
                                 ))}
                                 
-                                {/* 自定义源 */}
                                 {customSources.length > 0 && (
                                     <>
                                         <div className="px-3 py-2 text-[10px] font-bold text-gray-400 uppercase tracking-wider bg-gray-50 dark:bg-slate-900/50 border-t border-gray-100 dark:border-gray-700">自定义源</div>
@@ -208,7 +250,6 @@ const Home: React.FC<HomeProps> = ({
                                 )}
                             </div>
                             
-                            {/* 添加源入口 */}
                             <button 
                                 onClick={() => { setShowAddSource(true); setIsSourceMenuOpen(false); }}
                                 className="w-full flex items-center justify-center gap-2 py-3 text-sm font-bold text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors border-t border-gray-100 dark:border-gray-700"
@@ -245,10 +286,38 @@ const Home: React.FC<HomeProps> = ({
                 ))}
             </div>
           ) : (
-            <div className="flex flex-wrap gap-2">
-                {currentTags.map(tag => (
+            <div className="flex flex-wrap items-center gap-2">
+                {/* 原始标签 */}
+                {originalTags.map(tag => (
                     <button key={tag} onClick={() => onStateUpdate({ doubanTag: tag, doubanMovies: [] })} className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all ${savedState.doubanTag === tag ? 'bg-pink-100 dark:bg-pink-900/30 text-pink-600 dark:text-pink-400 ring-1 ring-pink-500' : 'bg-white dark:bg-slate-800 text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-gray-700'}`}>{tag}</button>
                 ))}
+                
+                {/* 自定义标签 */}
+                {customDoubanTags.map(tag => (
+                    <div key={tag} className="group relative">
+                        <button 
+                            onClick={() => onStateUpdate({ doubanTag: tag, doubanMovies: [] })} 
+                            className={`pl-4 pr-8 py-1.5 rounded-full text-sm font-medium transition-all border-dashed ${savedState.doubanTag === tag ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 ring-1 ring-blue-500' : 'bg-white dark:bg-slate-800 text-gray-600 dark:text-gray-400 border border-gray-300 dark:border-gray-600'}`}
+                        >
+                            {tag}
+                        </button>
+                        <button 
+                            onClick={(e) => handleRemoveTag(e, tag)}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-red-500 transition-colors"
+                        >
+                            <Icon name="close" className="text-[14px]" />
+                        </button>
+                    </div>
+                ))}
+
+                {/* 添加标签按钮 */}
+                <button 
+                  onClick={() => setShowAddTag(true)}
+                  className="w-8 h-8 rounded-full border border-dashed border-gray-300 dark:border-gray-600 flex items-center justify-center text-gray-400 hover:text-pink-500 hover:border-pink-500 transition-all"
+                  title="添加自定义标签"
+                >
+                    <Icon name="add" className="text-xl" />
+                </button>
             </div>
           )}
       </nav>
@@ -359,6 +428,29 @@ const Home: React.FC<HomeProps> = ({
                 <div className="flex gap-3 mt-8">
                     <button type="button" onClick={() => setShowAddSource(false)} className="flex-1 px-4 py-3 rounded-xl text-sm font-bold text-gray-500 hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors">取消</button>
                     <button type="submit" className="flex-1 px-4 py-3 rounded-xl text-sm font-bold bg-blue-600 text-white shadow-lg shadow-blue-500/30 hover:bg-blue-700 transition-colors">确认添加</button>
+                </div>
+            </form>
+        </div>
+      )}
+
+      {/* 添加豆瓣标签模态框 */}
+      {showAddTag && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center px-4">
+            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowAddTag(false)}></div>
+            <form onSubmit={handleAddTagSubmit} className="relative bg-white dark:bg-slate-800 rounded-2xl p-6 w-full max-w-xs shadow-2xl border border-gray-200 dark:border-gray-700 animate-fadeIn">
+                <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">添加自定义标签</h3>
+                <input 
+                    autoFocus
+                    required
+                    type="text" 
+                    placeholder="输入标签名，如: 漫威"
+                    className="w-full bg-gray-50 dark:bg-slate-900 border-gray-200 dark:border-gray-700 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-pink-500 transition-all dark:text-white mb-4"
+                    value={newTagName}
+                    onChange={e => setNewTagName(e.target.value)}
+                />
+                <div className="flex gap-2">
+                    <button type="button" onClick={() => setShowAddTag(false)} className="flex-1 px-4 py-2 rounded-lg text-xs font-bold text-gray-500 hover:bg-gray-100 dark:hover:bg-slate-700">取消</button>
+                    <button type="submit" className="flex-1 px-4 py-2 rounded-lg text-xs font-bold bg-pink-600 text-white hover:bg-pink-700 transition-colors">确认</button>
                 </div>
             </form>
         </div>

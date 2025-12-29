@@ -58,6 +58,7 @@ const App: React.FC = () => {
   const [customSources, setCustomSources] = useState<Source[]>([]);
   const [currentSource, setCurrentSource] = useState<Source>({ name: '加载中...', api: '' });
 
+  // 这里的 sources 是实时计算的，供子组件使用
   const sources = [...defaultSources, ...customSources];
 
   useEffect(() => {
@@ -85,12 +86,9 @@ const App: React.FC = () => {
 
         if (savedSource) {
            setCurrentSource(savedSource);
-        } else if (localCustomSources.length > 0) {
-           setCurrentSource(localCustomSources[0]);
-           setLastUsedSourceApi(localCustomSources[0].api);
-        } else if (fetchedSources.length > 0) {
-            setCurrentSource(fetchedSources[0]);
-            setLastUsedSourceApi(fetchedSources[0].api);
+        } else if (allSources.length > 0) {
+            setCurrentSource(allSources[0]);
+            setLastUsedSourceApi(allSources[0].api);
         }
     };
     initSources();
@@ -118,12 +116,27 @@ const App: React.FC = () => {
 
   const handleSearch = (query: string, autoAggregate: boolean = false) => {
     setSearchQuery(query);
-    setSearchViewState(prev => ({ 
-        ...prev, 
-        query: query, 
-        hasSearched: false,
-        isAggregate: autoAggregate || prev.isAggregate
-    }));
+    setSearchViewState(prev => {
+        const next = { 
+            ...prev, 
+            query: query, 
+            hasSearched: false,
+            isAggregate: autoAggregate || prev.isAggregate,
+            selectedSourceApis: new Set(prev.selectedSourceApis)
+        };
+        
+        // 关键：实时根据当前已加载的源列表进行初始化
+        const currentAvailableApis = sources.map(s => s.api);
+        
+        if (autoAggregate) {
+            // 豆瓣点击立即检索：强制选中所有源
+            next.selectedSourceApis = new Set(currentAvailableApis);
+        } else if (next.selectedSourceApis.size === 0) {
+            // 普通搜索：至少选中当前源
+            next.selectedSourceApis = new Set([currentSource.api]);
+        }
+        return next;
+    });
     handleViewChange('SEARCH');
   };
 
@@ -134,7 +147,7 @@ const App: React.FC = () => {
         if (target) {
             handleSourceChange(target);
         } else {
-            const tempSource = { name: movie.sourceName || '历史资源', api: movie.sourceApi };
+            const tempSource = { name: movie.sourceName || '资源源', api: movie.sourceApi };
             handleSourceChange(tempSource);
         }
     }
@@ -162,54 +175,18 @@ const App: React.FC = () => {
   const renderView = () => {
     switch (currentView) {
       case 'HOME':
-        return (
-          <Home 
-            setView={handleViewChange} 
-            onSelectMovie={handleSelectMovie} 
-            currentSource={currentSource}
-            sources={sources}
-            onSourceChange={handleSourceChange}
-            onAddCustomSource={handleAddCustomSource}
-            onRemoveCustomSource={handleRemoveCustomSource}
-            onSearch={handleSearch}
-            savedState={homeViewState}
-            onStateUpdate={updateHomeState}
-          />
-        );
+        return <Home setView={handleViewChange} onSelectMovie={handleSelectMovie} currentSource={currentSource} sources={sources} onSourceChange={handleSourceChange} onAddCustomSource={handleAddCustomSource} onRemoveCustomSource={handleRemoveCustomSource} onSearch={handleSearch} savedState={homeViewState} onStateUpdate={updateHomeState} />;
       case 'SEARCH':
-        return (
-            <Search 
-                setView={handleViewChange} 
-                query={searchQuery} 
-                onSelectMovie={handleSelectMovie}
-                currentSource={currentSource}
-                sources={sources}
-                onSourceChange={handleSourceChange}
-                savedState={searchViewState}
-                onStateUpdate={updateSearchState}
-            />
-        );
+        return <Search setView={handleViewChange} query={searchQuery} onSelectMovie={handleSelectMovie} currentSource={currentSource} sources={sources} onSourceChange={handleSourceChange} savedState={searchViewState} onStateUpdate={updateSearchState} />;
       case 'PLAYER':
-        return (
-            <Player 
-                setView={handleViewChange} 
-                movieId={selectedMovieId} 
-                currentSource={currentSource}
-            />
-        );
-      default:
-        return null;
+        return <Player setView={handleViewChange} movieId={selectedMovieId} currentSource={currentSource} />;
+      default: return null;
     }
   };
 
   return (
     <div className="flex flex-col min-h-screen font-display">
-      <Header 
-        currentView={currentView} 
-        setView={handleViewChange} 
-        onBack={handleBack}
-        onSearch={handleSearch}
-      />
+      <Header currentView={currentView} setView={handleViewChange} onBack={handleBack} onSearch={handleSearch} />
       {renderView()}
       <Footer currentView={currentView} />
     </div>

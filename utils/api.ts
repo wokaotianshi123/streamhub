@@ -10,33 +10,45 @@ const PROXIES: ProxyConfig[] = [
   { url: '/api/proxy?url=', type: 'query' },
   { url: 'https://api.codetabs.com/v1/proxy?quest=', type: 'query' },
   { url: 'https://corsproxy.io/?', type: 'append' },
+  { url: 'https://api.allorigins.win/raw?url=', type: 'query' },
 ];
 
 const fetchViaProxy = async (targetUrl: string): Promise<string> => {
-  let lastError;
+  let lastError = null;
   for (const proxy of PROXIES) {
     try {
-      let url = proxy.type === 'query' ? `${proxy.url}${encodeURIComponent(targetUrl)}` : `${proxy.url}${targetUrl}`;
+      const url = proxy.type === 'query' ? `${proxy.url}${encodeURIComponent(targetUrl)}` : `${proxy.url}${targetUrl}`;
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000); 
+      const timeoutId = setTimeout(() => controller.abort(), 12000); 
       
       try {
         const response = await fetch(url, { signal: controller.signal });
         clearTimeout(timeoutId);
         if (response.ok) {
           const text = await response.text();
-          if (text && text.trim().length > 0) return text;
+          if (text && text.trim().length > 0) {
+            // 简单的内容检查，如果是明显的 HTML 错误页则跳过
+            if (text.trim().toLowerCase().startsWith('<!doctype html') || text.trim().toLowerCase().startsWith('<html')) {
+               if (!targetUrl.includes('ac=list') && !targetUrl.includes('ac=detail')) {
+                   // 如果不是期待 XML 的 CMS 接口，且返回了 HTML，说明代理可能返回了错误页面
+                   throw new Error("Proxy returned HTML instead of data");
+               }
+            }
+            return text;
+          }
           throw new Error("Empty response body");
         }
-      } catch (e) {
+        throw new Error(`HTTP status ${response.status}`);
+      } catch (e: any) {
         clearTimeout(timeoutId);
-        console.warn(`Proxy ${proxy.url} failed:`, e);
+        lastError = e;
+        console.warn(`Proxy ${proxy.url} failed for ${targetUrl}:`, e.message);
       }
-    } catch (error) {
+    } catch (error: any) {
       lastError = error;
     }
   }
-  throw lastError || new Error(`Failed to fetch ${targetUrl} via all available proxies`);
+  throw lastError || new Error(`Failed to fetch via all available proxies`);
 };
 
 // --- Helper Functions ---
@@ -51,24 +63,23 @@ const getBaseHost = (apiUrl: string): string => {
 };
 
 /**
- * 格式化图片 URL：直接提取，不使用代理
- * 这里的逻辑要确保不会把已经完整的 URL 再次拼接
+ * 格式化图片 URL：直接提取字段内容，确保不被错误代理。
  */
 const formatImageUrl = (url: string, apiHost: string, providedDomain?: string): string => {
     if (!url) return "";
     let cleaned = url.trim();
     
-    // 如果是完整的 URL，直接返回
+    // 如果已经是完整路径，直接返回。这是修复“不要代理图片”的关键。
     if (cleaned.startsWith('http://') || cleaned.startsWith('https://')) return cleaned;
     
     // 处理协议相对路径
     if (cleaned.startsWith('//')) return 'https:' + cleaned;
     
-    // 处理域内路径
+    // 处理域内相对路径
     const domain = (providedDomain || apiHost).replace(/\/$/, '');
     if (cleaned.startsWith('/')) return domain + cleaned;
     
-    // 其他情况尝试拼接
+    // 默认尝试拼接
     if (!cleaned.includes('://')) return domain + '/' + cleaned;
     
     return cleaned;
@@ -89,7 +100,7 @@ const sanitizeXml = (xml: string): string => {
 };
 
 /**
- * 核心数据映射
+ * 核心数据映射：优先使用原始 vod_pic
  */
 const mapJsonToMovie = (v: any, apiHost: string, picDomain?: string): Movie => ({
     id: (v.vod_id || v.id || '').toString(),
@@ -190,36 +201,40 @@ export const fetchVideoList = async (apiUrl: string, typeId: string = '', page: 
     const detailUrl = `${apiUrl}${separator}ac=detail&pg=${page}${typeId ? `&t=${typeId}` : ''}`;
 
     const [listContent, detailContent] = await Promise.all([
-        fetchViaProxy(listUrl),
-        fetchViaProxy(detailUrl)
+        fetchViaProxy(listUrl).catch(() => ""),
+        fetchViaProxy(detailUrl).catch(() => "")
     ]);
 
     let categories: Category[] = [];
     let videos: Movie[] = [];
 
     // 1. 解析分类
-    try {
-        if (listContent.trim().startsWith('{')) {
-            const data = JSON.parse(listContent);
-            categories = (data.class || []).map((c: any) => ({ 
-                id: (c.type_id || c.id || '').toString(), 
-                name: (c.type_name || c.name || '') 
-            })).filter((c: any) => c.id && c.name);
-        } else {
-            categories = parseMacCMSXml(listContent, apiHost).categories;
-        }
-    } catch (e) { console.warn("Failed to parse categories", e); }
+    if (listContent) {
+        try {
+            if (listContent.trim().startsWith('{')) {
+                const data = JSON.parse(listContent);
+                categories = (data.class || []).map((c: any) => ({ 
+                    id: (c.type_id || c.id || '').toString(), 
+                    name: (c.type_name || c.name || '') 
+                })).filter((c: any) => c.id && c.name);
+            } else if (listContent.trim().startsWith('<')) {
+                categories = parseMacCMSXml(listContent, apiHost).categories;
+            }
+        } catch (e) { console.warn("Failed to parse categories", e); }
+    }
 
     // 2. 解析视频
-    try {
-        if (detailContent.trim().startsWith('{')) {
-            const data = JSON.parse(detailContent);
-            const picDomain = data.pic_domain || data.vod_pic_domain || undefined;
-            videos = (data.list || []).map((v: any) => mapJsonToMovie(v, apiHost, picDomain));
-        } else {
-            videos = parseMacCMSXml(detailContent, apiHost).videos;
-        }
-    } catch (e) { console.warn("Failed to parse videos", e); }
+    if (detailContent) {
+        try {
+            if (detailContent.trim().startsWith('{')) {
+                const data = JSON.parse(detailContent);
+                const picDomain = data.pic_domain || data.vod_pic_domain || undefined;
+                videos = (data.list || []).map((v: any) => mapJsonToMovie(v, apiHost, picDomain));
+            } else if (detailContent.trim().startsWith('<')) {
+                videos = parseMacCMSXml(detailContent, apiHost).videos;
+            }
+        } catch (e) { console.warn("Failed to parse videos", e); }
+    }
 
     return { videos, categories };
   } catch (error) {
@@ -228,8 +243,7 @@ export const fetchVideoList = async (apiUrl: string, typeId: string = '', page: 
 };
 
 /**
- * 豆瓣推荐抓取
- * 修复：增加对 JSON 的解析容错，并直接提取图片字段
+ * 豆瓣推荐抓取：修复 JSON 解析错误。
  */
 export const fetchDoubanSubjects = async (type: 'movie' | 'tv', tag: string, pageStart: number = 0): Promise<Movie[]> => {
   try {
@@ -237,6 +251,12 @@ export const fetchDoubanSubjects = async (type: 'movie' | 'tv', tag: string, pag
     const text = await fetchViaProxy(url);
     if (!text || text.trim().length === 0) return [];
     
+    // 增加对 JSON 格式的显式检查，防止代理返回 HTML 导致崩溃
+    if (!text.trim().startsWith('{')) {
+        console.error("Douban response is not JSON:", text.substring(0, 100));
+        return [];
+    }
+
     const data = JSON.parse(text);
     if (!data || !data.subjects) return [];
     
@@ -245,7 +265,7 @@ export const fetchDoubanSubjects = async (type: 'movie' | 'tv', tag: string, pag
       title: item.title || '',
       year: '', 
       genre: tag,
-      image: item.cover || '', // 豆瓣图片直连
+      image: item.cover || '', // 豆瓣图片直连提取
       rating: parseFloat(item.rate) || 0,
       isDouban: true
     }));

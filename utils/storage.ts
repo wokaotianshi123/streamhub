@@ -3,6 +3,7 @@ import { Movie, Source } from '../types';
 
 const STORAGE_KEY = 'streamhub_watch_history';
 const CUSTOM_SOURCES_KEY = 'streamhub_custom_sources';
+const CUSTOM_DOUBAN_TAGS_KEY = 'streamhub_custom_douban_tags';
 const LAST_SOURCE_KEY = 'streamhub_last_source_api';
 const MAX_HISTORY_ITEMS = 50;
 
@@ -37,7 +38,6 @@ export const addToHistory = (movie: Movie): void => {
     let newItem = { ...movie };
     
     if (existingIndex !== -1) {
-        // Preserve existing progress if the new object doesn't have it (or has 0)
         const existing = history[existingIndex];
         newItem.currentTime = existing.currentTime || 0;
         newItem.currentEpisodeUrl = existing.currentEpisodeUrl;
@@ -45,7 +45,6 @@ export const addToHistory = (movie: Movie): void => {
         
         history.splice(existingIndex, 1);
     } else {
-        // New item defaults
         if (newItem.currentTime === undefined) newItem.currentTime = 0;
     }
 
@@ -106,7 +105,6 @@ export const getCustomSources = (): Source[] => {
 export const addCustomSourceToStorage = (source: Source): Source[] => {
   try {
     const current = getCustomSources();
-    // Prevent duplicates by API URL
     if (current.some(s => s.api === source.api)) {
       return current;
     }
@@ -127,6 +125,46 @@ export const removeCustomSourceFromStorage = (api: string): Source[] => {
     return updated;
   } catch (e) {
     console.error("Error removing custom source", e);
+    return [];
+  }
+};
+
+// --- Custom Douban Tags Management ---
+
+export const getCustomDoubanTags = (type: 'movie' | 'tv'): string[] => {
+  try {
+    const stored = localStorage.getItem(CUSTOM_DOUBAN_TAGS_KEY);
+    if (!stored) return [];
+    const allTags = JSON.parse(stored);
+    return allTags[type] || [];
+  } catch (e) {
+    return [];
+  }
+};
+
+export const addCustomDoubanTagToStorage = (type: 'movie' | 'tv', tag: string): string[] => {
+  try {
+    const stored = localStorage.getItem(CUSTOM_DOUBAN_TAGS_KEY);
+    const allTags = stored ? JSON.parse(stored) : { movie: [], tv: [] };
+    if (!allTags[type].includes(tag)) {
+      allTags[type].push(tag);
+      localStorage.setItem(CUSTOM_DOUBAN_TAGS_KEY, JSON.stringify(allTags));
+    }
+    return allTags[type];
+  } catch (e) {
+    return [];
+  }
+};
+
+export const removeCustomDoubanTagFromStorage = (type: 'movie' | 'tv', tag: string): string[] => {
+  try {
+    const stored = localStorage.getItem(CUSTOM_DOUBAN_TAGS_KEY);
+    if (!stored) return [];
+    const allTags = JSON.parse(stored);
+    allTags[type] = (allTags[type] || []).filter((t: string) => t !== tag);
+    localStorage.setItem(CUSTOM_DOUBAN_TAGS_KEY, JSON.stringify(allTags));
+    return allTags[type];
+  } catch (e) {
     return [];
   }
 };
