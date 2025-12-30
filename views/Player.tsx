@@ -329,7 +329,7 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource, source
                     const blob = new Blob([result.content], { type: 'application/vnd.apple.mpegurl' });
                     finalUrl = URL.createObjectURL(blob);
                     blobUrlRef.current = finalUrl;
-                    setCleanStatus(`✅ 安全流就绪`);
+                    setCleanStatus(`✅ 已去除广告`);
                     cleanTimeoutId = setTimeout(() => {
                         if (isMounted) setCleanStatus('');
                     }, 5000);
@@ -349,7 +349,7 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource, source
             lang: 'zh-cn',
             lock: true,
             fastForward: true,
-            screenshot: true,
+            screenshot: false,
             playbackRate: true, // 倍速支持
             aspectRatio: true,
             fullscreen: true,
@@ -361,7 +361,7 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource, source
             autoSize: false,
             autoMini: false,
             setting: true, // 设置面板
-            pip: true, // 画中画
+            pip: false, // 画中画
             airplay: true, // 投屏 (Apple)
             customType: {
                 m3u8: function (video: HTMLVideoElement, url: string, artInstance: any) {
