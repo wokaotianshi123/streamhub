@@ -3,7 +3,7 @@ import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { ViewState, Movie, PlayerProps, Source } from '../types';
 import { Icon } from '../components/Icon';
 import { fetchVideoDetails, parsePlayUrl, searchVideos } from '../utils/api';
-import { getMovieHistory, updateHistoryProgress, addToHistory, isFavorite, toggleFavorite } from '../utils/storage';
+import { getMovieProgress, updateHistoryProgress, addToHistory, isFavorite, toggleFavorite } from '../utils/storage';
 
 declare global {
   interface Window {
@@ -176,8 +176,8 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource, source
       // 检查收藏状态
       setIsFavorited(isFavorite(movieId));
 
-      // 实时获取该影片的历史进度信息
-      const historyItem = getMovieHistory(movieId);
+      // 实时获取该影片的历史进度信息（改用增强函数，历史被删后可从收藏夹取）
+      const historyItem = getMovieProgress(movieId);
       historyTimeRef.current = (historyItem && historyItem.currentTime && historyItem.currentTime > 5) ? historyItem.currentTime : 0;
 
       const data = await fetchVideoDetails(currentSource.api, movieId);

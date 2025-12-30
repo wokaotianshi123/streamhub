@@ -8,39 +8,56 @@ const CUSTOM_DOUBAN_TAGS_KEY = 'streamhub_custom_douban_tags';
 const LAST_SOURCE_KEY = 'streamhub_last_source_api';
 const MAX_HISTORY_ITEMS = 50;
 
+// --- Helper to get data ---
+const getRawData = (key: string): Movie[] => {
+  try {
+    const json = localStorage.getItem(key);
+    if (!json) return [];
+    const parsed = JSON.parse(json);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (e) { return []; }
+};
+
 // --- History Management ---
 
-export const getHistory = (): Movie[] => {
-  try {
-    const historyJSON = localStorage.getItem(HISTORY_KEY);
-    if (!historyJSON) return [];
-    const parsed = JSON.parse(historyJSON);
-    return Array.isArray(parsed) ? parsed.filter((item: any) => item && item.id && item.title) : [];
-  } catch (error) {
-    return [];
-  }
+export const getHistory = (): Movie[] => getRawData(HISTORY_KEY).filter((item: any) => item && item.id && item.title);
+
+/**
+ * 获取播放进度：优先检查历史记录，再检查收藏夹
+ */
+export const getMovieProgress = (id: string): Movie | undefined => {
+  const history = getHistory();
+  const histMatch = history.find(m => m.id === id);
+  if (histMatch && histMatch.currentTime) return histMatch;
+
+  const favorites = getFavorites();
+  return favorites.find(m => m.id === id);
 };
 
-export const getMovieHistory = (id: string): Movie | undefined => {
-  const history = getHistory();
-  return history.find(m => m.id === id);
-};
+// 保持向下兼容，重定向到新函数
+export const getMovieHistory = (id: string) => getMovieProgress(id);
 
 export const addToHistory = (movie: Movie): void => {
   try {
     const history = getHistory();
     const existingIndex = history.findIndex((item) => item.id === movie.id);
     
-    // 基础对象
     let newItem = { ...movie };
     
-    if (existingIndex !== -1) {
+    // 关键修复：合并进度
+    // 如果历史没有，尝试从收藏夹获取初始进度
+    if (existingIndex === -1) {
+        const favMatch = getFavorites().find(m => m.id === movie.id);
+        if (favMatch) {
+            newItem.currentTime = movie.currentTime || favMatch.currentTime || 0;
+            newItem.currentEpisodeUrl = movie.currentEpisodeUrl || favMatch.currentEpisodeUrl;
+            newItem.currentEpisodeName = movie.currentEpisodeName || favMatch.currentEpisodeName;
+        }
+    } else {
         const existing = history[existingIndex];
-        // 关键修复：合并进度。优先使用传入对象的进度（如果有），否则保留旧进度
         newItem.currentTime = movie.currentTime || existing.currentTime || 0;
         newItem.currentEpisodeUrl = movie.currentEpisodeUrl || existing.currentEpisodeUrl;
         newItem.currentEpisodeName = movie.currentEpisodeName || existing.currentEpisodeName;
-        // 移除旧项
         history.splice(existingIndex, 1);
     }
     
@@ -49,15 +66,29 @@ export const addToHistory = (movie: Movie): void => {
   } catch (error) {}
 };
 
+/**
+ * 同步更新历史和收藏夹中的进度
+ */
 export const updateHistoryProgress = (movieId: string, time: number, episodeUrl?: string, episodeName?: string): void => {
   try {
+    // 1. 更新历史记录
     const history = getHistory();
-    const index = history.findIndex(m => m.id === movieId);
-    if (index !== -1) {
-      history[index].currentTime = time;
-      if (episodeUrl) history[index].currentEpisodeUrl = episodeUrl;
-      if (episodeName) history[index].currentEpisodeName = episodeName;
+    const hIndex = history.findIndex(m => m.id === movieId);
+    if (hIndex !== -1) {
+      history[hIndex].currentTime = time;
+      if (episodeUrl) history[hIndex].currentEpisodeUrl = episodeUrl;
+      if (episodeName) history[hIndex].currentEpisodeName = episodeName;
       localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+    }
+
+    // 2. 更新收藏夹进度（确保收藏项进度独立持久化）
+    const favorites = getFavorites();
+    const fIndex = favorites.findIndex(m => m.id === movieId);
+    if (fIndex !== -1) {
+      favorites[fIndex].currentTime = time;
+      if (episodeUrl) favorites[fIndex].currentEpisodeUrl = episodeUrl;
+      if (episodeName) favorites[fIndex].currentEpisodeName = episodeName;
+      localStorage.setItem(FAVORITES_KEY, JSON.stringify(favorites));
     }
   } catch (error) {}
 };
@@ -71,13 +102,7 @@ export const clearHistory = (): void => localStorage.removeItem(HISTORY_KEY);
 
 // --- Favorites Management ---
 
-export const getFavorites = (): Movie[] => {
-  try {
-    const favJSON = localStorage.getItem(FAVORITES_KEY);
-    if (!favJSON) return [];
-    return JSON.parse(favJSON);
-  } catch (e) { return []; }
-};
+export const getFavorites = (): Movie[] => getRawData(FAVORITES_KEY);
 
 export const isFavorite = (id: string): boolean => {
   const favorites = getFavorites();
@@ -88,11 +113,20 @@ export const toggleFavorite = (movie: Movie): boolean => {
   const favorites = getFavorites();
   const index = favorites.findIndex(m => m.id === movie.id);
   let isAdded = false;
+  
   if (index !== -1) {
     favorites.splice(index, 1);
     isAdded = false;
   } else {
-    favorites.unshift(movie);
+    // 添加到收藏时，如果历史记录里有进度，顺便带过来
+    const historyItem = getHistory().find(m => m.id === movie.id);
+    const movieWithProgress = {
+        ...movie,
+        currentTime: historyItem?.currentTime || movie.currentTime || 0,
+        currentEpisodeUrl: historyItem?.currentEpisodeUrl || movie.currentEpisodeUrl,
+        currentEpisodeName: historyItem?.currentEpisodeName || movie.currentEpisodeName
+    };
+    favorites.unshift(movieWithProgress);
     isAdded = true;
   }
   localStorage.setItem(FAVORITES_KEY, JSON.stringify(favorites));
