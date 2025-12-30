@@ -27,32 +27,25 @@ const Search: React.FC<SearchProps> = ({
     }
   }, [savedState.loading]);
 
-  // 搜索主逻辑
+  // 搜索逻辑优化
   useEffect(() => {
     if (!query) return;
+    
+    // 如果关键词一致且已经搜过，且不是因为切换了线路，则跳过
     if (query === savedState.query && savedState.hasSearched) return;
 
     const doSearch = async () => {
-      // 中断正在进行的搜索任务
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
       }
       abortControllerRef.current = new AbortController();
       const signal = abortControllerRef.current.signal;
 
-      // 更新状态开始搜索
       onStateUpdate({ loading: true, query: query });
 
-      // 确定搜索目标 API 列表
-      let targetApis = savedState.isAggregate 
+      const targetApis = savedState.isAggregate 
         ? Array.from(savedState.selectedSourceApis)
         : [currentSource.api];
-
-      // 强制兜底逻辑
-      if (targetApis.length === 0 && sources.length > 0) {
-          targetApis = sources.map(s => s.api);
-          onStateUpdate({ selectedSourceApis: new Set(targetApis) });
-      }
 
       if (targetApis.length === 0) {
           onStateUpdate({ loading: false, results: [], hasSearched: true });
@@ -60,7 +53,6 @@ const Search: React.FC<SearchProps> = ({
       }
 
       try {
-        // 并行并发请求
         const searchTasks = sources
             .filter(s => targetApis.includes(s.api))
             .map(async (source) => {
@@ -73,17 +65,14 @@ const Search: React.FC<SearchProps> = ({
                     }));
                 } catch (e: any) {
                     if (e.name === 'AbortError') throw e;
-                    console.warn(`[Search] ${source.name} 线路请求中断:`, e.message);
                     return [];
                 }
             });
 
         const taskResults = await Promise.allSettled(searchTasks);
         
-        // 如果信号已中断，不更新状态
         if (signal.aborted) return;
 
-        // 汇总并智能去重
         const flatResults: Movie[] = [];
         taskResults.forEach(result => {
             if (result.status === 'fulfilled') {
@@ -102,17 +91,13 @@ const Search: React.FC<SearchProps> = ({
             }
         });
         
-        const uniqueResults = Array.from(resultGroup.values());
-
-        // 提交结果
         onStateUpdate({ 
-            results: uniqueResults, 
+            results: Array.from(resultGroup.values()), 
             loading: false, 
             hasSearched: true 
         });
       } catch (error: any) {
         if (error.name !== 'AbortError') {
-          console.error("Search failed:", error);
           onStateUpdate({ loading: false, hasSearched: true });
         }
       }
@@ -121,8 +106,10 @@ const Search: React.FC<SearchProps> = ({
     const timer = setTimeout(doSearch, 300);
     return () => {
         clearTimeout(timer);
+        if (abortControllerRef.current) abortControllerRef.current.abort();
     };
-  }, [query, currentSource.api, savedState.isAggregate, savedState.selectedSourceApis, sources, savedState.hasSearched]);
+    // 移除 sources 和 hasSearched 的直接依赖，防止引用变化导致的死循环
+  }, [query, currentSource.api, savedState.isAggregate, savedState.selectedSourceApis]);
 
   const handleMovieClick = (movie: Movie) => {
     if (movie.sourceApi && movie.sourceApi !== currentSource.api) {
@@ -153,10 +140,7 @@ const Search: React.FC<SearchProps> = ({
   };
 
   const unselectAllToCurrent = () => {
-    // 立即停止当前搜索
-    if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-    }
+    if (abortControllerRef.current) abortControllerRef.current.abort();
     onStateUpdate({ 
         selectedSourceApis: new Set([currentSource.api]), 
         isAggregate: false,
@@ -167,10 +151,7 @@ const Search: React.FC<SearchProps> = ({
   };
 
   const toggleAggregateMode = () => {
-      // 切换模式时也停止当前搜索
-      if (abortControllerRef.current) {
-          abortControllerRef.current.abort();
-      }
+      if (abortControllerRef.current) abortControllerRef.current.abort();
       onStateUpdate({ isAggregate: !savedState.isAggregate, hasSearched: false });
   };
 
@@ -215,7 +196,7 @@ const Search: React.FC<SearchProps> = ({
                     </div>
                  </div>
                  
-                 {/* 优化后的滚动条列表 */}
+                 {/* 增加最大高度与滚动条 */}
                  <div className="max-h-48 overflow-y-auto pr-2 custom-scrollbar transition-all duration-300">
                     <div className="flex flex-wrap gap-2 pt-2 pb-1">
                         {sources.map(source => {

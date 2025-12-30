@@ -22,13 +22,18 @@ const fetchViaProxy = async (targetUrl: string, externalSignal?: AbortSignal): P
     try {
       const url = proxy.type === 'query' ? `${proxy.url}${encodeURIComponent(targetUrl)}` : `${proxy.url}${targetUrl}`;
       const controller = new AbortController();
-      // 聚合搜索时，单个代理不应占用过长时间，缩短至 8 秒
       const timeoutId = setTimeout(() => controller.abort(), 8000); 
       
-      // Link external signal to this fetch if provided
-      const signal = externalSignal 
-        ? (AbortSignal as any).any ? (AbortSignal as any).any([controller.signal, externalSignal]) : externalSignal
-        : controller.signal;
+      // 兼容性处理合并信号
+      let signal = controller.signal;
+      if (externalSignal) {
+        if ((AbortSignal as any).any) {
+          signal = (AbortSignal as any).any([controller.signal, externalSignal]);
+        } else {
+          // 如果不支持 .any，至少传递外部信号以支持手动取消
+          signal = externalSignal;
+        }
+      }
 
       try {
         const response = await fetch(url, { signal });
@@ -50,25 +55,20 @@ const fetchViaProxy = async (targetUrl: string, externalSignal?: AbortSignal): P
         clearTimeout(timeoutId);
         if (e.name === 'AbortError' && externalSignal?.aborted) throw e;
         lastError = e;
-        console.warn(`Proxy ${proxy.url} failed for ${targetUrl}:`, e.message);
       }
     } catch (error: any) {
       if (error.name === 'AbortError') throw error;
       lastError = error;
     }
   }
-  throw lastError || new Error(`Failed to fetch via all available proxies`);
+  throw lastError || new Error(`Failed to fetch`);
 };
-
-// --- Helper Functions ---
 
 const getBaseHost = (apiUrl: string): string => {
     try {
         const url = new URL(apiUrl);
         return `${url.protocol}//${url.host}`;
-    } catch (e) {
-        return "";
-    }
+    } catch (e) { return ""; }
 };
 
 const formatImageUrl = (url: string, apiHost: string, providedDomain?: string): string => {

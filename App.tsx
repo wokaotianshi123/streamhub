@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import Header from './components/Header';
 import Footer from './components/Footer';
 import Home from './views/Home';
@@ -58,8 +58,8 @@ const App: React.FC = () => {
   const [customSources, setCustomSources] = useState<Source[]>([]);
   const [currentSource, setCurrentSource] = useState<Source>({ name: '加载中...', api: '' });
 
-  // 这里的 sources 是实时计算的，供子组件使用
-  const sources = [...defaultSources, ...customSources];
+  // 关键修复：使用 useMemo 保证 sources 引用稳定，防止 Search 组件无限重搜
+  const sources = useMemo(() => [...defaultSources, ...customSources], [defaultSources, customSources]);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -125,14 +125,11 @@ const App: React.FC = () => {
             selectedSourceApis: new Set(prev.selectedSourceApis)
         };
         
-        // 关键：实时根据当前已加载的源列表进行初始化
         const currentAvailableApis = sources.map(s => s.api);
         
         if (autoAggregate) {
-            // 豆瓣点击立即检索：强制选中所有源
             next.selectedSourceApis = new Set(currentAvailableApis);
         } else if (next.selectedSourceApis.size === 0) {
-            // 普通搜索：至少选中当前源
             next.selectedSourceApis = new Set([currentSource.api]);
         }
         return next;
