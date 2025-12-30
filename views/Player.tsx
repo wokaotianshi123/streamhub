@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { ViewState, Movie, PlayerProps, Source } from '../types';
 import { Icon } from '../components/Icon';
@@ -148,6 +147,10 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource, source
   const [cleanStatus, setCleanStatus] = useState<string>('');
   const [playerRatio, setPlayerRatio] = useState<number>(56.25);
   
+  // 分享功能状态
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [isCopied, setIsCopied] = useState(false);
+
   // 其他源状态
   const [altSources, setAltSources] = useState<AltSource[]>([]);
 
@@ -260,6 +263,36 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource, source
         };
         addToHistory(movieWithSource);
         onSelectMovie(movieWithSource);
+    }
+  };
+
+  const handleShare = () => {
+    setShowShareModal(true);
+  };
+
+  const copyToClipboard = async (text: string) => {
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const textArea = document.createElement("textarea");
+        textArea.value = text;
+        textArea.style.position = "fixed";
+        textArea.style.left = "-9999px";
+        textArea.style.top = "0";
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        document.execCommand('copy');
+        textArea.remove();
+      }
+      setIsCopied(true);
+      setTimeout(() => setIsCopied(false), 2000);
+      if (artRef.current && artRef.current.notice) {
+        artRef.current.notice.show = '播放链接已复制到剪贴板';
+      }
+    } catch (err) {
+      console.error('Failed to copy: ', err);
     }
   };
 
@@ -440,7 +473,40 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource, source
   if (!details) return <div className="text-center py-20 text-red-500 font-bold">内容加载失败，请尝试刷新页面或切换来源</div>;
 
   return (
-    <main className="container mx-auto px-4 py-6 space-y-8 animate-fadeIn">
+    <main className="container mx-auto px-4 py-6 space-y-8 animate-fadeIn relative">
+      {/* 分享模态框 */}
+      {showShareModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center px-4">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowShareModal(false)}></div>
+          <div className="relative bg-white dark:bg-slate-800 rounded-3xl p-8 w-full max-w-md shadow-2xl border border-gray-200 dark:border-gray-700 animate-fadeIn">
+            <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-6 flex items-center gap-2">
+              <Icon name="share" className="text-blue-500" />
+              分享播放链接
+            </h3>
+            <div className="space-y-4">
+              <div className="bg-gray-100 dark:bg-slate-900 p-4 rounded-xl border border-gray-200 dark:border-gray-700 break-all text-sm text-gray-600 dark:text-gray-300 font-mono select-all">
+                {currentUrl}
+              </div>
+              <div className="flex gap-3 mt-8">
+                <button 
+                  onClick={() => copyToClipboard(currentUrl)}
+                  className={`flex-1 flex items-center justify-center gap-2 py-3.5 rounded-xl font-bold transition-all shadow-lg active:scale-95 ${isCopied ? 'bg-green-600 text-white shadow-green-500/30' : 'bg-blue-600 text-white hover:bg-blue-700 shadow-blue-500/20'}`}
+                >
+                  <Icon name={isCopied ? "check_circle" : "content_copy"} />
+                  {isCopied ? '已复制到剪贴板' : '一键复制播放链接'}
+                </button>
+              </div>
+              <button 
+                onClick={() => setShowShareModal(false)}
+                className="w-full mt-2 py-2 text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors font-medium"
+              >
+                关闭
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <section className="relative w-full rounded-2xl overflow-hidden shadow-2xl bg-black ring-1 ring-gray-800 transition-all duration-700" style={{ paddingBottom: `${playerRatio}%` }}>
          {currentUrl ? (
              <><div ref={containerRef} className="absolute inset-0 w-full h-full"></div>
@@ -461,7 +527,10 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource, source
                     </div>
                 </div>
                 <div className="flex gap-2">
-                    <button className="flex items-center gap-1.5 px-4 py-2 bg-gray-100 dark:bg-slate-800 hover:bg-gray-200 dark:hover:bg-slate-700 text-gray-700 dark:text-gray-200 rounded-lg text-sm transition-colors border border-transparent hover:border-gray-300 dark:hover:border-gray-600 font-medium">
+                    <button 
+                        onClick={handleShare}
+                        className="flex items-center gap-1.5 px-4 py-2 bg-gray-100 dark:bg-slate-800 hover:bg-gray-200 dark:hover:bg-slate-700 text-gray-700 dark:text-gray-200 rounded-lg text-sm transition-colors border border-transparent hover:border-gray-300 dark:hover:border-gray-600 font-medium cursor-pointer"
+                    >
                         <Icon name="share" className="text-lg" />
                         分享
                     </button>
