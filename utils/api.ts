@@ -1,7 +1,7 @@
 
 import { Movie, Category, Source } from '../types';
 
-// 代理仅用于 API 请求跨域，不用于图片
+// 代理配置
 interface ProxyConfig {
   url: string;
   type: 'append' | 'query';
@@ -24,13 +24,12 @@ const fetchViaProxy = async (targetUrl: string, externalSignal?: AbortSignal): P
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 8000); 
       
-      // 兼容性处理合并信号
       let signal = controller.signal;
       if (externalSignal) {
+        // 兼容低版本环境
         if ((AbortSignal as any).any) {
           signal = (AbortSignal as any).any([controller.signal, externalSignal]);
         } else {
-          // 如果不支持 .any，至少传递外部信号以支持手动取消
           signal = externalSignal;
         }
       }
@@ -41,6 +40,7 @@ const fetchViaProxy = async (targetUrl: string, externalSignal?: AbortSignal): P
         if (response.ok) {
           const text = await response.text();
           if (text && text.trim().length > 0) {
+            // 防止代理返回 HTML 报错页
             if (text.trim().toLowerCase().startsWith('<!doctype html') || text.trim().toLowerCase().startsWith('<html')) {
                if (!targetUrl.includes('ac=list') && !targetUrl.includes('ac=detail')) {
                    throw new Error("Proxy returned HTML instead of data");
@@ -48,7 +48,6 @@ const fetchViaProxy = async (targetUrl: string, externalSignal?: AbortSignal): P
             }
             return text;
           }
-          throw new Error("Empty response body");
         }
         throw new Error(`HTTP status ${response.status}`);
       } catch (e: any) {
@@ -163,7 +162,9 @@ const parseMacCMSXml = (xmlText: string, apiHost: string) => {
             }
         }
         return { videos, categories };
-    } catch (e) { throw e; }
+    } catch (e) { 
+        return { videos: [], categories: [] };
+    }
 };
 
 export const fetchSources = async (): Promise<Source[]> => {
@@ -210,7 +211,7 @@ export const fetchVideoList = async (apiUrl: string, typeId: string = '', page: 
             } else if (listContent.trim().startsWith('<')) {
                 categories = parseMacCMSXml(listContent, apiHost).categories;
             }
-        } catch (e) { console.warn("Failed to parse categories", e); }
+        } catch (e) { }
     }
 
     if (detailContent) {
@@ -222,7 +223,7 @@ export const fetchVideoList = async (apiUrl: string, typeId: string = '', page: 
             } else if (detailContent.trim().startsWith('<')) {
                 videos = parseMacCMSXml(detailContent, apiHost).videos;
             }
-        } catch (e) { console.warn("Failed to parse videos", e); }
+        } catch (e) { }
     }
 
     return { videos, categories };
@@ -268,8 +269,8 @@ export const searchVideos = async (apiUrl: string, query: string, signal?: Abort
     }
     const { videos } = parseMacCMSXml(content, apiHost);
     return videos;
-  } catch (error) {
-    if (error.name === 'AbortError') throw error;
+  } catch (error: any) { // 显式使用 any 类型以通过 Vercel 构建
+    if (error?.name === 'AbortError') throw error;
     return [];
   }
 };

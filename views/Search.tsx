@@ -27,12 +27,12 @@ const Search: React.FC<SearchProps> = ({
     }
   }, [savedState.loading]);
 
-  // 搜索逻辑优化
+  // 搜索主逻辑
   useEffect(() => {
     if (!query) return;
     
-    // 如果关键词一致且已经搜过，且不是因为切换了线路，则跳过
-    if (query === savedState.query && savedState.hasSearched) return;
+    // Guard: 如果关键词且搜索状态已经完成，则不再触发
+    if (query === savedState.query && savedState.hasSearched && !savedState.loading) return;
 
     const doSearch = async () => {
       if (abortControllerRef.current) {
@@ -41,6 +41,7 @@ const Search: React.FC<SearchProps> = ({
       abortControllerRef.current = new AbortController();
       const signal = abortControllerRef.current.signal;
 
+      // 开始加载
       onStateUpdate({ loading: true, query: query });
 
       const targetApis = savedState.isAggregate 
@@ -98,6 +99,7 @@ const Search: React.FC<SearchProps> = ({
         });
       } catch (error: any) {
         if (error.name !== 'AbortError') {
+          console.error("Search error:", error);
           onStateUpdate({ loading: false, hasSearched: true });
         }
       }
@@ -108,7 +110,7 @@ const Search: React.FC<SearchProps> = ({
         clearTimeout(timer);
         if (abortControllerRef.current) abortControllerRef.current.abort();
     };
-    // 移除 sources 和 hasSearched 的直接依赖，防止引用变化导致的死循环
+    // 稳定性修复：依赖项精简，防止因引用变动导致的无限循环
   }, [query, currentSource.api, savedState.isAggregate, savedState.selectedSourceApis]);
 
   const handleMovieClick = (movie: Movie) => {
@@ -162,11 +164,11 @@ const Search: React.FC<SearchProps> = ({
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
              <div>
                 <h2 className="text-2xl font-bold text-gray-900 dark:text-white">搜索结果: "{query}"</h2>
-                <div className="text-sm text-gray-500 dark:text-gray-400 mt-1 h-5">
+                <div className="text-sm text-gray-500 dark:text-gray-400 mt-1 h-5 flex items-center gap-2">
                     {savedState.loading ? (
-                        <div className="flex items-center gap-2 animate-pulse">
+                        <div className="flex items-center gap-2">
                             <div className="w-3 h-3 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-                            全网检索中...
+                            <span className="animate-pulse">全网检索中...</span>
                         </div>
                     ) : `已聚合 ${savedState.isAggregate ? savedState.selectedSourceApis.size : '1'} 个源，找到 ${savedState.results.length} 个结果`}
                 </div>
@@ -196,7 +198,7 @@ const Search: React.FC<SearchProps> = ({
                     </div>
                  </div>
                  
-                 {/* 增加最大高度与滚动条 */}
+                 {/* 列表滚动条优化 */}
                  <div className="max-h-48 overflow-y-auto pr-2 custom-scrollbar transition-all duration-300">
                     <div className="flex flex-wrap gap-2 pt-2 pb-1">
                         {sources.map(source => {
