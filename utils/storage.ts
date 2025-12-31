@@ -7,6 +7,8 @@ const CUSTOM_SOURCES_KEY = 'streamhub_custom_sources';
 const DISABLED_SOURCES_KEY = 'streamhub_disabled_sources';
 const CUSTOM_DOUBAN_TAGS_KEY = 'streamhub_custom_douban_tags';
 const LAST_SOURCE_KEY = 'streamhub_last_source_api';
+const ACCELERATION_URL_KEY = 'streamhub_acceleration_url';
+const ACCELERATION_ENABLED_KEY = 'streamhub_acceleration_enabled';
 const MAX_HISTORY_ITEMS = 50;
 
 // --- Helper to get data ---
@@ -162,6 +164,20 @@ export const resetSourcesToDefault = (): void => {
   localStorage.removeItem(CUSTOM_SOURCES_KEY);
   localStorage.removeItem(DISABLED_SOURCES_KEY);
   localStorage.removeItem(LAST_SOURCE_KEY);
+  localStorage.removeItem(ACCELERATION_URL_KEY);
+  localStorage.removeItem(ACCELERATION_ENABLED_KEY);
+};
+
+// --- Acceleration Management ---
+export const getAccelerationConfig = (): { url: string, enabled: boolean } => {
+    const url = localStorage.getItem(ACCELERATION_URL_KEY) || 'https://cfkua.wokaotianshi.eu.org';
+    const enabled = localStorage.getItem(ACCELERATION_ENABLED_KEY) === 'true';
+    return { url, enabled };
+};
+
+export const setAccelerationConfig = (url: string, enabled: boolean): void => {
+    localStorage.setItem(ACCELERATION_URL_KEY, url);
+    localStorage.setItem(ACCELERATION_ENABLED_KEY, String(enabled));
 };
 
 // --- Douban Tags ---
@@ -240,8 +256,9 @@ export const exportFullBackup = () => {
             movie: getCustomDoubanTags('movie'),
             tv: getCustomDoubanTags('tv')
         },
+        acceleration: getAccelerationConfig(),
         lastSource: getLastUsedSourceApi(),
-        version: '1.1'
+        version: '1.2'
     };
     const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -261,6 +278,10 @@ export const importFullBackup = (backup: any) => {
         if (backup.disabledSources) localStorage.setItem(DISABLED_SOURCES_KEY, JSON.stringify(backup.disabledSources));
         if (backup.customDoubanTags) localStorage.setItem(CUSTOM_DOUBAN_TAGS_KEY, JSON.stringify(backup.customDoubanTags));
         if (backup.lastSource) localStorage.setItem(LAST_SOURCE_KEY, backup.lastSource);
+        if (backup.acceleration) {
+            localStorage.setItem(ACCELERATION_URL_KEY, backup.acceleration.url);
+            localStorage.setItem(ACCELERATION_ENABLED_KEY, String(backup.acceleration.enabled));
+        }
         return true;
     } catch (e) {
         return false;

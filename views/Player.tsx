@@ -3,7 +3,7 @@ import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { ViewState, Movie, PlayerProps, Source } from '../types';
 import { Icon } from '../components/Icon';
 import { fetchVideoDetails, parsePlayUrl, searchVideos } from '../utils/api';
-import { getMovieProgress, updateHistoryProgress, addToHistory, isFavorite, toggleFavorite } from '../utils/storage';
+import { getMovieProgress, updateHistoryProgress, addToHistory, isFavorite, toggleFavorite, getAccelerationConfig } from '../utils/storage';
 
 declare global {
   interface Window {
@@ -149,9 +149,11 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource, source
   const [cleanStatus, setCleanStatus] = useState<string>('');
   const [playerRatio, setPlayerRatio] = useState<number>(56.25);
   
-  // 收藏状态
+  // 收藏与加速配置
   const [isFavorited, setIsFavorited] = useState(false);
-  
+  const accConfig = useMemo(() => getAccelerationConfig(), []);
+  const [isTempAccelerationEnabled, setIsTempAccelerationEnabled] = useState(false);
+
   // 选集分段状态
   const [currentSectionIndex, setCurrentSectionIndex] = useState(0);
 
@@ -182,6 +184,11 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource, source
     }
     return sections;
   }, [playList]);
+
+  // 综合判定加速是否启用
+  const effectiveAccEnabled = useMemo(() => {
+    return accConfig.enabled || isTempAccelerationEnabled;
+  }, [accConfig.enabled, isTempAccelerationEnabled]);
 
   // 当当前播放 URL 改变时，确保分段导航处于正确位置
   useEffect(() => {
@@ -283,6 +290,18 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource, source
     setShowShareModal(true);
   };
 
+  const toggleTempAcceleration = () => {
+      // 如果全局已经启用了加速，点击开关通常不做任何修改（按用户需求说明：如果全局的播放前置启用就不做前置链接，这里理解为点击开关对已全局启用的无效）
+      if (accConfig.enabled) {
+          if (artRef.current) artRef.current.notice.show = '全局加速已开启，无需重复启用';
+          return;
+      }
+      setIsTempAccelerationEnabled(!isTempAccelerationEnabled);
+      if (artRef.current) {
+          artRef.current.notice.show = !isTempAccelerationEnabled ? '已临时开启加速播放' : '已关闭临时加速';
+      }
+  };
+
   const copyToClipboard = async (text: string) => {
     try {
       if (navigator.clipboard && window.isSecureContext) {
@@ -320,11 +339,19 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource, source
             if (!hlsReady) { await loadScript("https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.20/hls.min.js"); hlsReady = await waitForGlobal('Hls', 5000); }
         } catch (e) { setCleanStatus('系统初始化异常'); return; }
         if (!isMounted) return;
+        
+        // 处理加速前置链接逻辑
         let finalUrl = currentUrl;
+        if (effectiveAccEnabled && accConfig.url) {
+            const prefix = accConfig.url.endsWith('/') ? accConfig.url.slice(0, -1) : accConfig.url;
+            finalUrl = `${prefix}/${currentUrl}`;
+        }
+
         if (currentUrl.includes('.m3u8')) {
             try {
                 setCleanStatus('流处理中...');
-                const result = await fetchAndCleanM3u8(currentUrl);
+                // fetchAndCleanM3u8 使用处理过的 finalUrl 以支持加速
+                const result = await fetchAndCleanM3u8(finalUrl);
                 if (isMounted && result.removedCount > 0) {
                     const blob = new Blob([result.content], { type: 'application/vnd.apple.mpegurl' });
                     finalUrl = URL.createObjectURL(blob);
@@ -350,7 +377,7 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource, source
             lock: true,
             fastForward: true,
             screenshot: false,
-            playbackRate: true, // 倍速支持
+            playbackRate: true,
             aspectRatio: true,
             fullscreen: true,
             fullscreenWeb: true,
@@ -360,9 +387,9 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource, source
             playsInline: true,
             autoSize: false,
             autoMini: false,
-            setting: true, // 设置面板
-            pip: false, // 画中画
-            airplay: false, // 投屏 (Apple)
+            setting: true,
+            pip: false,
+            airplay: false,
             customType: {
                 m3u8: function (video: HTMLVideoElement, url: string, artInstance: any) {
                     if (window.Hls.isSupported()) {
@@ -413,7 +440,7 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource, source
         if (artRef.current) { playbackRateRef.current = artRef.current.playbackRate; artRef.current.destroy(false); artRef.current = null; }
         if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current);
     };
-  }, [currentUrl, movieId]);
+  }, [currentUrl, movieId, effectiveAccEnabled]); // 增加 effectiveAccEnabled 依赖项
 
   if (loading) return <div className="flex justify-center items-center h-[80vh]"><div className="animate-spin rounded-full h-12 w-12 border-t-2 border-blue-500"></div></div>;
   if (!details) return <div className="text-center py-20 text-red-500 font-bold">内容加载失败</div>;
@@ -480,13 +507,21 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource, source
         </div>
 
         <div className="bg-white dark:bg-slate-800 rounded-xl p-5 border border-gray-100 dark:border-gray-700 h-fit flex flex-col shadow-sm max-h-[600px]">
-            <h3 className="font-bold text-sm mb-4 text-gray-900 dark:text-white flex items-center justify-between">
-                <span className="flex items-center gap-2">
+            <div className="flex items-center justify-between mb-4">
+                <h3 className="font-bold text-sm text-gray-900 dark:text-white flex items-center gap-2">
                     <Icon name="playlist_play" className="text-blue-500 text-lg" /> 选集列表
-                </span>
-                <span className="text-[10px] text-gray-400">{playList.length} 个视频</span>
-            </h3>
+                </h3>
+                <button 
+                    onClick={toggleTempAcceleration}
+                    className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black transition-all border ${effectiveAccEnabled ? 'bg-green-600 border-green-600 text-white' : 'bg-gray-100 dark:bg-slate-700 text-gray-500 border-gray-200 dark:border-gray-600'}`}
+                >
+                    <Icon name="bolt" className="text-xs" />
+                    {effectiveAccEnabled ? '加速已开启' : '点击加速'}
+                </button>
+            </div>
             
+            <p className="text-[9px] text-gray-400 mb-4">{playList.length} 个视频内容</p>
+
             {/* 分段导航 - 仅在剧集多时显示 */}
             {episodeSections.length > 0 && (
                 <div className="flex gap-2 overflow-x-auto pb-3 mb-3 hide-scrollbar">
