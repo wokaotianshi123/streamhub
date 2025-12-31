@@ -14,7 +14,8 @@ const PROXIES: ProxyConfig[] = [
   { url: 'https://api.allorigins.win/raw?url=', type: 'query' },
 ];
 
-const fetchViaProxy = async (targetUrl: string, externalSignal?: AbortSignal): Promise<string> => {
+// Fix: Exported fetchViaProxy to resolve import error in Home.tsx
+export const fetchViaProxy = async (targetUrl: string, externalSignal?: AbortSignal): Promise<string> => {
   let lastError = null;
   for (const proxy of PROXIES) {
     if (externalSignal?.aborted) throw new Error("Aborted");

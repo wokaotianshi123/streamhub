@@ -9,7 +9,7 @@ const LAST_SOURCE_KEY = 'streamhub_last_source_api';
 const MAX_HISTORY_ITEMS = 50;
 
 // --- Helper to get data ---
-const getRawData = (key: string): Movie[] => {
+const getRawData = (key: string): any[] => {
   try {
     const json = localStorage.getItem(key);
     if (!json) return [];
@@ -19,12 +19,8 @@ const getRawData = (key: string): Movie[] => {
 };
 
 // --- History Management ---
-
 export const getHistory = (): Movie[] => getRawData(HISTORY_KEY).filter((item: any) => item && item.id && item.title);
 
-/**
- * 获取播放进度：优先检查历史记录，再检查收藏夹
- */
 export const getMovieProgress = (id: string): Movie | undefined => {
   const history = getHistory();
   const histMatch = history.find(m => m.id === id);
@@ -34,18 +30,11 @@ export const getMovieProgress = (id: string): Movie | undefined => {
   return favorites.find(m => m.id === id);
 };
 
-// 保持向下兼容，重定向到新函数
-export const getMovieHistory = (id: string) => getMovieProgress(id);
-
 export const addToHistory = (movie: Movie): void => {
   try {
     const history = getHistory();
     const existingIndex = history.findIndex((item) => item.id === movie.id);
-    
     let newItem = { ...movie };
-    
-    // 关键修复：合并进度
-    // 如果历史没有，尝试从收藏夹获取初始进度
     if (existingIndex === -1) {
         const favMatch = getFavorites().find(m => m.id === movie.id);
         if (favMatch) {
@@ -60,18 +49,13 @@ export const addToHistory = (movie: Movie): void => {
         newItem.currentEpisodeName = movie.currentEpisodeName || existing.currentEpisodeName;
         history.splice(existingIndex, 1);
     }
-    
     const newHistory = [newItem, ...history].slice(0, MAX_HISTORY_ITEMS);
     localStorage.setItem(HISTORY_KEY, JSON.stringify(newHistory));
   } catch (error) {}
 };
 
-/**
- * 同步更新历史和收藏夹中的进度
- */
 export const updateHistoryProgress = (movieId: string, time: number, episodeUrl?: string, episodeName?: string): void => {
   try {
-    // 1. 更新历史记录
     const history = getHistory();
     const hIndex = history.findIndex(m => m.id === movieId);
     if (hIndex !== -1) {
@@ -80,8 +64,6 @@ export const updateHistoryProgress = (movieId: string, time: number, episodeUrl?
       if (episodeName) history[hIndex].currentEpisodeName = episodeName;
       localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
     }
-
-    // 2. 更新收藏夹进度（确保收藏项进度独立持久化）
     const favorites = getFavorites();
     const fIndex = favorites.findIndex(m => m.id === movieId);
     if (fIndex !== -1) {
@@ -101,7 +83,6 @@ export const removeFromHistory = (movieId: string): void => {
 export const clearHistory = (): void => localStorage.removeItem(HISTORY_KEY);
 
 // --- Favorites Management ---
-
 export const getFavorites = (): Movie[] => getRawData(FAVORITES_KEY);
 
 export const isFavorite = (id: string): boolean => {
@@ -113,12 +94,10 @@ export const toggleFavorite = (movie: Movie): boolean => {
   const favorites = getFavorites();
   const index = favorites.findIndex(m => m.id === movie.id);
   let isAdded = false;
-  
   if (index !== -1) {
     favorites.splice(index, 1);
     isAdded = false;
   } else {
-    // 添加到收藏时，如果历史记录里有进度，顺便带过来
     const historyItem = getHistory().find(m => m.id === movie.id);
     const movieWithProgress = {
         ...movie,
@@ -141,7 +120,6 @@ export const removeFromFavorites = (id: string): void => {
 export const clearFavorites = (): void => localStorage.removeItem(FAVORITES_KEY);
 
 // --- Custom Source Management ---
-
 export const getCustomSources = (): Source[] => {
   try {
     const stored = localStorage.getItem(CUSTOM_SOURCES_KEY);
@@ -165,7 +143,6 @@ export const removeCustomSourceFromStorage = (api: string): Source[] => {
 };
 
 // --- Douban Tags ---
-
 export const getCustomDoubanTags = (type: 'movie' | 'tv'): string[] => {
   try {
     const stored = localStorage.getItem(CUSTOM_DOUBAN_TAGS_KEY);
@@ -196,3 +173,77 @@ export const removeCustomDoubanTagFromStorage = (type: 'movie' | 'tv', tag: stri
 
 export const getLastUsedSourceApi = (): string | null => localStorage.getItem(LAST_SOURCE_KEY);
 export const setLastUsedSourceApi = (api: string): void => localStorage.setItem(LAST_SOURCE_KEY, api);
+
+// --- 备份与还原逻辑 ---
+
+// 获取格式化的时间戳
+const getFormattedTimestamp = () => {
+    const now = new Date();
+    return `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}_${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}`;
+};
+
+// 导出源
+export const exportSourcesData = () => {
+    const custom = getCustomSources();
+    const data = custom.map(s => ({ name: s.name, url: s.api }));
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${getFormattedTimestamp()}备份源.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+};
+
+// 导入源
+export const importSourcesData = (jsonData: any[]): Source[] => {
+    if (!Array.isArray(jsonData)) return getCustomSources();
+    const current = getCustomSources();
+    const newSources: Source[] = [];
+    jsonData.forEach(item => {
+        const api = item.url || item.api;
+        if (api && item.name && !current.some(s => s.api === api)) {
+            newSources.push({ name: item.name, api: api, isCustom: true });
+        }
+    });
+    const updated = [...current, ...newSources];
+    localStorage.setItem(CUSTOM_SOURCES_KEY, JSON.stringify(updated));
+    return updated;
+};
+
+// 一键备份全部
+export const exportFullBackup = () => {
+    const backup = {
+        history: getHistory(),
+        favorites: getFavorites(),
+        customSources: getCustomSources(),
+        customDoubanTags: {
+            movie: getCustomDoubanTags('movie'),
+            tv: getCustomDoubanTags('tv')
+        },
+        lastSource: getLastUsedSourceApi(),
+        version: '1.0'
+    };
+    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${getFormattedTimestamp()}一键备份源.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+};
+
+// 一键还原全部
+export const importFullBackup = (backup: any) => {
+    if (!backup || typeof backup !== 'object') return false;
+    try {
+        if (backup.history) localStorage.setItem(HISTORY_KEY, JSON.stringify(backup.history));
+        if (backup.favorites) localStorage.setItem(FAVORITES_KEY, JSON.stringify(backup.favorites));
+        if (backup.customSources) localStorage.setItem(CUSTOM_SOURCES_KEY, JSON.stringify(backup.customSources));
+        if (backup.customDoubanTags) localStorage.setItem(CUSTOM_DOUBAN_TAGS_KEY, JSON.stringify(backup.customDoubanTags));
+        if (backup.lastSource) localStorage.setItem(LAST_SOURCE_KEY, backup.lastSource);
+        return true;
+    } catch (e) {
+        return false;
+    }
+};
