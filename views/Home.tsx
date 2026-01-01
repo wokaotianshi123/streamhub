@@ -766,6 +766,20 @@ const Home: React.FC<ExtendedHomeProps> = ({
                     </div>
                 ) : (
                     <div className="flex flex-wrap items-center gap-2">
+                        <div className="flex p-1 bg-gray-100 dark:bg-slate-800 rounded-xl mr-2 border border-gray-200 dark:border-gray-700 h-9">
+                            <button 
+                                onClick={() => { if(savedState.doubanType !== 'movie') onStateUpdate({ doubanType: 'movie', doubanTag: ORIGINAL_MOVIE_TAGS[0], doubanMovies: [] }); }} 
+                                className={`px-3 flex items-center justify-center text-xs font-bold rounded-lg transition-all h-full ${savedState.doubanType === 'movie' ? 'bg-white dark:bg-slate-700 text-pink-600 shadow-sm' : 'text-gray-500 hover:text-gray-900 dark:hover:text-gray-300'}`}
+                            >
+                                电影
+                            </button>
+                            <button 
+                                onClick={() => { if(savedState.doubanType !== 'tv') onStateUpdate({ doubanType: 'tv', doubanTag: ORIGINAL_TV_TAGS[0], doubanMovies: [] }); }} 
+                                className={`px-3 flex items-center justify-center text-xs font-bold rounded-lg transition-all h-full ${savedState.doubanType === 'tv' ? 'bg-white dark:bg-slate-700 text-pink-600 shadow-sm' : 'text-gray-500 hover:text-gray-900 dark:hover:text-gray-300'}`}
+                            >
+                                电视剧
+                            </button>
+                        </div>
                         {originalTags.map(tag => (
                             <button key={tag} onClick={() => onStateUpdate({ doubanTag: tag, doubanMovies: [] })} className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all ${savedState.doubanTag === tag ? 'bg-pink-100 dark:bg-pink-900/30 text-pink-600 dark:text-pink-400 ring-1 ring-pink-500' : 'bg-white dark:bg-slate-800 text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-gray-700'}`}>{tag}</button>
                         ))}
