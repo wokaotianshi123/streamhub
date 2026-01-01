@@ -444,21 +444,15 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource, source
                             name: 'skip-intro',
                             position: 'right',
                             html: getButtonHtml('片头', skipConfigRef.current.intro, skipConfigRef.current.intro > 0, '33, 150, 243'),
-                            tooltip: '设置当前位置为片头跳过点',
+                            tooltip: '设置/取消 片头跳过点',
                             click: function () {
                                 const art = artRef.current as any;
                                 if (!art) return;
                                 const time = art.currentTime;
                                 const currentIntro = skipConfigRef.current.intro;
                                 
-                                // 智能逻辑：如果当前播放时间与已设置的片头时间相近（<2秒），则视为"取消"操作
-                                // 否则视为"更新"操作
-                                let newIntro = 0;
-                                if (currentIntro > 0 && Math.abs(currentIntro - time) < 2) {
-                                    newIntro = 0; // 取消
-                                } else {
-                                    newIntro = time; // 设置/更新
-                                }
+                                // 简单切换逻辑：如果有值则取消，无值则设置
+                                const newIntro = currentIntro > 0 ? 0 : time;
 
                                 const config = { ...skipConfigRef.current, intro: newIntro };
                                 skipConfigRef.current = config;
@@ -476,7 +470,7 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource, source
                             name: 'skip-outro',
                             position: 'right',
                             html: getButtonHtml('片尾', skipConfigRef.current.outroOffset, skipConfigRef.current.outroOffset > 0, '255, 152, 0'),
-                            tooltip: '设置当前位置为片尾跳过点',
+                            tooltip: '设置/取消 片尾跳过点',
                             click: function () {
                                 const art = artRef.current as any;
                                 if (!art) return;
@@ -487,13 +481,8 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource, source
                                 const offset = duration - time;
                                 const currentOutro = skipConfigRef.current.outroOffset;
                                 
-                                // 智能逻辑：如果当前计算出的片尾偏移量与已设置的相近（<2秒），则视为"取消"操作
-                                let newOutro = 0;
-                                if (currentOutro > 0 && Math.abs(currentOutro - offset) < 2) {
-                                    newOutro = 0; // 取消
-                                } else {
-                                    newOutro = offset; // 设置/更新
-                                }
+                                // 简单切换逻辑：如果有值则取消，无值则设置
+                                const newOutro = currentOutro > 0 ? 0 : offset;
                                 
                                 const config = { ...skipConfigRef.current, outroOffset: newOutro };
                                 skipConfigRef.current = config;
