@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { ViewState, Movie, PlayerProps, Source } from '../types';
 import { Icon } from '../components/Icon';
@@ -31,7 +30,7 @@ const HLS_CONFIG = {
     nudgeMaxRetry: 10,
 };
 
-const EPISODES_PER_SECTION = 30; // 每段展示集数
+const EPISODES_PER_SECTION = 30;
 
 const loadScript = (src: string): Promise<void> => {
     return new Promise((resolve, reject) => {
@@ -134,7 +133,6 @@ const fetchAndCleanM3u8 = async (url: string, depth = 0): Promise<{ content: str
     return { content: newLines.join('\n'), removedCount: segments.length - maxC, log: `已移除 ${segments.length - maxC} 分片` };
 };
 
-// 辅助函数：生成控制栏按钮HTML
 const getButtonHtml = (label: string, time: number, isActive: boolean, color: string) => {
     const bg = isActive ? `rgba(${color}, 0.8)` : 'rgba(0,0,0,0.5)';
     const border = isActive ? `rgba(${color}, 1)` : 'rgba(255,255,255,0.2)';
@@ -156,15 +154,10 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource, source
   const [loading, setLoading] = useState(true);
   const [cleanStatus, setCleanStatus] = useState<string>('');
   const [playerRatio, setPlayerRatio] = useState<number>(56.25);
-  
-  // 收藏与加速配置
   const [isFavorited, setIsFavorited] = useState(false);
   const accConfig = useMemo(() => getAccelerationConfig(), []);
   const [isTempAccelerationEnabled, setIsTempAccelerationEnabled] = useState(false);
-
-  // 选集分段状态
   const [currentSectionIndex, setCurrentSectionIndex] = useState(0);
-
   const [showShareModal, setShowShareModal] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
   const [altSources, setAltSources] = useState<AltSource[]>([]);
@@ -174,14 +167,13 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource, source
   const historyTimeRef = useRef<number>(0);
   const hasAppliedHistorySeek = useRef<boolean>(false);
   const blobUrlRef = useRef<string | null>(null);
-  const playbackRateRef = useRef<number>(1);
-  const isWebFullscreenRef = useRef<boolean>(false);
   const isFullscreenRef = useRef<boolean>(false);
+  const isWebFullscreenRef = useRef<boolean>(false);
+  const playbackRateRef = useRef<number>(1);
+  
   const playListRef = useRef<{name: string, url: string}[]>([]);
   const currentUrlRef = useRef<string>('');
-
-  // 片头片尾配置
-  const skipConfigRef = useRef<SkipConfig>(getSkipConfig(movieId));
+  const skipConfigRef = useRef<SkipConfig>({ intro: 0, outroOffset: 0 });
 
   useEffect(() => {
     playListRef.current = playList;
@@ -191,7 +183,6 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource, source
     currentUrlRef.current = currentUrl;
   }, [currentUrl]);
 
-  // 计算剧集分段
   const episodeSections = useMemo(() => {
     if (playList.length <= EPISODES_PER_SECTION) return [];
     const sections = [];
@@ -203,22 +194,17 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource, source
     return sections;
   }, [playList]);
 
-  const effectiveAccEnabled = useMemo(() => {
-    return accConfig.enabled || isTempAccelerationEnabled;
-  }, [accConfig.enabled, isTempAccelerationEnabled]);
+  const effectiveAccEnabled = useMemo(() => accConfig.enabled || isTempAccelerationEnabled, [accConfig.enabled, isTempAccelerationEnabled]);
 
   useEffect(() => {
     if (playList.length > EPISODES_PER_SECTION && currentUrl) {
         const idx = playList.findIndex(ep => ep.url === currentUrl);
-        if (idx !== -1) {
-            const sectionIdx = Math.floor(idx / EPISODES_PER_SECTION);
-            setCurrentSectionIndex(sectionIdx);
-        }
+        if (idx !== -1) setCurrentSectionIndex(Math.floor(idx / EPISODES_PER_SECTION));
     }
   }, [currentUrl, playList]);
 
   const safeShowNotice = (msg: string) => {
-    if (artRef.current && artRef.current.notice) {
+    if (artRef.current?.notice) {
         try { artRef.current.notice.show = msg; } catch (e) {}
     }
   };
@@ -229,12 +215,11 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource, source
       setLoading(true);
       setPlayerRatio(56.25);
       hasAppliedHistorySeek.current = false; 
-      
       setIsFavorited(isFavorite(movieId));
       skipConfigRef.current = getSkipConfig(movieId);
 
       const historyItem = getMovieProgress(movieId);
-      historyTimeRef.current = (historyItem && historyItem.currentTime && historyItem.currentTime > 5) ? historyItem.currentTime : 0;
+      historyTimeRef.current = (historyItem?.currentTime && historyItem.currentTime > 5) ? historyItem.currentTime : 0;
 
       const data = await fetchVideoDetails(currentSource.api, movieId);
       if (data) {
@@ -244,9 +229,8 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource, source
         
         if (historyItem?.currentEpisodeUrl) {
             const found = parsedEpisodes.find(ep => ep.url === historyItem.currentEpisodeUrl);
-            if (found) {
-                setCurrentUrl(found.url);
-            } else if (parsedEpisodes.length > 0) {
+            if (found) setCurrentUrl(found.url);
+            else if (parsedEpisodes.length > 0) {
                 setCurrentUrl(parsedEpisodes[0].url);
                 historyTimeRef.current = 0; 
             }
@@ -294,42 +278,28 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource, source
 
   const handleFavoriteToggle = () => {
     if (details) {
-        const res = toggleFavorite({
-            ...details,
-            sourceApi: currentSource.api,
-            sourceName: currentSource.name
-        });
+        const res = toggleFavorite({ ...details, sourceApi: currentSource.api, sourceName: currentSource.name });
         setIsFavorited(res);
         safeShowNotice(res ? '✅ 已添加到收藏夹' : '⚠️ 已从收藏夹移除');
     }
   };
 
-  const handleShare = () => {
-    setShowShareModal(true);
-  };
-
   const toggleTempAcceleration = () => {
-      if (accConfig.enabled) {
-          safeShowNotice('全局加速已开启，无需重复启用');
-          return;
-      }
+      if (accConfig.enabled) { safeShowNotice('全局加速已开启'); return; }
       setIsTempAccelerationEnabled(!isTempAccelerationEnabled);
       safeShowNotice(!isTempAccelerationEnabled ? '已临时开启加速播放' : '已关闭临时加速');
   };
 
   const copyToClipboard = async (text: string) => {
     try {
-      if (navigator.clipboard && window.isSecureContext) {
-        await navigator.clipboard.writeText(text);
-      } else {
+      if (navigator.clipboard && window.isSecureContext) await navigator.clipboard.writeText(text);
+      else {
         const textArea = document.createElement("textarea");
         textArea.value = text;
         textArea.style.position = "fixed";
         textArea.style.left = "-9999px";
-        textArea.style.top = "0";
         document.body.appendChild(textArea);
-        textArea.focus();
-        textArea.select();
+        textArea.focus(); textArea.select();
         document.execCommand('copy');
         textArea.remove();
       }
@@ -355,26 +325,21 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource, source
   };
 
   const handleVideoReady = (art: any) => {
-    // 恢复播放进度逻辑
     if (historyTimeRef.current > 5 && !hasAppliedHistorySeek.current) {
         art.currentTime = historyTimeRef.current;
         hasAppliedHistorySeek.current = true;
         if (art.notice) art.notice.show = `已自动恢复播放进度`;
     } else {
-        // 片头跳过逻辑
         const config = skipConfigRef.current;
         if (config.intro > 1) {
             art.currentTime = config.intro;
             if (art.notice) art.notice.show = `已自动跳过片头`;
         }
     }
-
-    // 维持之前的全屏状态
     if (isWebFullscreenRef.current) art.fullscreenWeb = true;
     if (isFullscreenRef.current) art.fullscreen = true;
   };
 
-  // 播放器实例清理（仅在 movieId 变化或组件卸载时）
   useEffect(() => {
     return () => {
         if (artRef.current) {
@@ -384,7 +349,6 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource, source
     };
   }, [movieId]);
 
-  // 播放核心逻辑：处理 URL 变更，复用实例
   useEffect(() => {
     if (!currentUrl || !containerRef.current) return;
     let cleanTimeoutId: any = null;
@@ -409,9 +373,7 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource, source
                     finalUrl = URL.createObjectURL(blob);
                     blobUrlRef.current = finalUrl;
                     setCleanStatus(`✅ 已去除广告`);
-                    cleanTimeoutId = setTimeout(() => {
-                        if (isMounted) setCleanStatus('');
-                    }, 5000);
+                    cleanTimeoutId = setTimeout(() => { if (isMounted) setCleanStatus(''); }, 5000);
                 } else if (isMounted) setCleanStatus('');
             } catch (e) { if (isMounted) setCleanStatus(''); }
         }
@@ -419,7 +381,6 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource, source
         if (!isMounted) return;
 
         try {
-            // 确保依赖加载
             let artReady = await waitForGlobal('Artplayer', 3000);
             let hlsReady = await waitForGlobal('Hls', 3000);
             if (!artReady) { await loadScript("https://cdnjs.cloudflare.com/ajax/libs/artplayer/5.3.0/artplayer.js"); artReady = await waitForGlobal('Artplayer', 5000); }
@@ -428,12 +389,9 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource, source
             if (!isMounted) return;
 
             if (artRef.current) {
-                // 复用实例：切换 URL 并触发 Ready
                 await artRef.current.switchUrl(finalUrl);
                 handleVideoReady(artRef.current);
-                // 确保 switchUrl 后依然绑定ended事件（Artplayer switchUrl 通常保留之前的事件，但为保险这里做一次状态刷新）
             } else {
-                // 新建实例
                 const ArtplayerConstructor = window.Artplayer;
                 const art = new ArtplayerConstructor({
                     container: containerRef.current,
@@ -481,19 +439,20 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource, source
                             position: 'right',
                             html: getButtonHtml('片头', skipConfigRef.current.intro, skipConfigRef.current.intro > 0, '33, 150, 243'),
                             tooltip: '设置当前位置为片头跳过点',
-                            click: function (artInstance: any) {
-                                if (!artInstance) return;
-                                const time = artInstance.currentTime;
+                            click: function (item: any, event: Event) {
+                                // Correct context: 'this' is art instance
+                                const art = this as any;
+                                const time = art.currentTime;
                                 const config = { ...skipConfigRef.current, intro: time };
                                 skipConfigRef.current = config;
                                 setSkipConfig(movieId, config);
                                 
-                                artInstance.controls.update({
+                                art.controls.update({
                                     name: 'skip-intro',
                                     html: getButtonHtml('片头', time, true, '33, 150, 243')
                                 });
                                 
-                                if (artInstance.notice) artInstance.notice.show = `片头跳过点已设为: ${Math.floor(time)}s`;
+                                if (art.notice) art.notice.show = `片头跳过点已设为: ${Math.floor(time)}s`;
                             },
                         },
                         {
@@ -501,22 +460,22 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource, source
                             position: 'right',
                             html: getButtonHtml('片尾', skipConfigRef.current.outroOffset, skipConfigRef.current.outroOffset > 0, '255, 152, 0'),
                             tooltip: '设置当前位置为片尾跳过点',
-                            click: function (artInstance: any) {
-                                if (!artInstance) return;
-                                const time = artInstance.currentTime;
-                                const duration = artInstance.duration || 0;
+                            click: function (item: any, event: Event) {
+                                const art = this as any;
+                                const time = art.currentTime;
+                                const duration = art.duration || 0;
                                 if (duration <= 0) return;
                                 const offset = duration - time;
                                 const config = { ...skipConfigRef.current, outroOffset: offset };
                                 skipConfigRef.current = config;
                                 setSkipConfig(movieId, config);
                                 
-                                artInstance.controls.update({
+                                art.controls.update({
                                     name: 'skip-outro',
                                     html: getButtonHtml('片尾', offset, true, '255, 152, 0')
                                 });
 
-                                if (artInstance.notice) artInstance.notice.show = `片尾跳过点已设为距结尾: ${Math.floor(offset)}s`;
+                                if (art.notice) art.notice.show = `片尾跳过点已设为距结尾: ${Math.floor(offset)}s`;
                             },
                         },
                     ],
@@ -526,33 +485,28 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource, source
                 art.on('ready', () => handleVideoReady(art));
                 art.on('fullscreen', (state: boolean) => { isFullscreenRef.current = state; });
                 art.on('fullscreenWeb', (state: boolean) => { isWebFullscreenRef.current = state; });
+                art.on('video:ratechange', () => { playbackRateRef.current = art.playbackRate; });
 
                 art.on('video:timeupdate', () => {
                     const time = art.currentTime;
                     const duration = art.duration;
-
                     if (time > 5) {
                         const url = currentUrlRef.current;
                         const ep = playListRef.current.find(item => item.url === url);
                         updateHistoryProgress(movieId, time, url, ep?.name);
                     }
-
                     const config = skipConfigRef.current;
                     if (config.outroOffset > 0 && duration > 0 && (duration - time) <= config.outroOffset) {
-                        if (Math.abs(duration - time) > 1) {
+                        if (Math.abs(duration - time) > 1.5) {
                              art.currentTime = duration;
                              if (art.notice) art.notice.show = `自动跳过片尾`;
                         }
                     }
                 });
 
-                art.on('video:ended', () => {
-                    playNextEpisode();
-                });
+                art.on('video:ended', () => { playNextEpisode(); });
             }
-        } catch (e) {
-            setCleanStatus('播放器加载失败');
-        }
+        } catch (e) { setCleanStatus('播放器加载失败'); }
     };
 
     playVideo();
@@ -598,7 +552,7 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource, source
                     </div>
                 </div>
                 <div className="flex gap-2">
-                    <button onClick={handleShare} className="flex items-center gap-1.5 px-4 py-2 bg-gray-100 dark:bg-slate-800 hover:bg-gray-200 dark:hover:bg-slate-700 text-gray-700 dark:text-gray-200 rounded-lg text-sm transition-colors border border-transparent font-medium"><Icon name="share" className="text-lg" />分享</button>
+                    <button onClick={() => setShowShareModal(true)} className="flex items-center gap-1.5 px-4 py-2 bg-gray-100 dark:bg-slate-800 hover:bg-gray-200 dark:hover:bg-slate-700 text-gray-700 dark:text-gray-200 rounded-lg text-sm transition-colors border border-transparent font-medium"><Icon name="share" className="text-lg" />分享</button>
                     <button onClick={handleFavoriteToggle} className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm transition-all border font-bold shadow-sm ${isFavorited ? 'bg-pink-50 dark:bg-pink-900/20 text-pink-600 border-pink-200 dark:border-pink-800' : 'bg-gray-100 dark:bg-slate-800 text-gray-700 dark:text-gray-200 border-transparent hover:bg-gray-200 dark:hover:bg-slate-700'}`}>
                         <Icon name={isFavorited ? "bookmark" : "bookmark_border"} className="text-lg" />
                         {isFavorited ? '已收藏' : '收藏'}
@@ -632,49 +586,22 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource, source
                 <h3 className="font-bold text-sm text-gray-900 dark:text-white flex items-center gap-2">
                     <Icon name="playlist_play" className="text-blue-500 text-lg" /> 选集列表
                 </h3>
-                <button 
-                    onClick={toggleTempAcceleration}
-                    className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black transition-all border ${effectiveAccEnabled ? 'bg-green-600 border-green-600 text-white' : 'bg-gray-100 dark:bg-slate-700 text-gray-500 border-gray-200 dark:border-gray-600'}`}
-                >
+                <button onClick={toggleTempAcceleration} className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black transition-all border ${effectiveAccEnabled ? 'bg-green-600 border-green-600 text-white' : 'bg-gray-100 dark:bg-slate-700 text-gray-500 border-gray-200 dark:border-gray-600'}`}>
                     <Icon name="bolt" className="text-xs" />
                     {effectiveAccEnabled ? '加速已开启' : '点击加速'}
                 </button>
             </div>
-            
             <p className="text-[9px] text-gray-400 mb-4">{playList.length} 个视频内容</p>
-
-            {/* 分段导航 - 仅在剧集多时显示 */}
             {episodeSections.length > 0 && (
                 <div className="flex gap-2 overflow-x-auto pb-3 mb-3 hide-scrollbar">
                     {episodeSections.map((sec, idx) => (
-                        <button
-                            key={idx}
-                            onClick={() => setCurrentSectionIndex(idx)}
-                            className={`flex-shrink-0 px-3 py-1 rounded-full text-[10px] font-bold transition-all border ${currentSectionIndex === idx ? 'bg-blue-600 border-blue-600 text-white' : 'bg-gray-50 dark:bg-slate-900 border-gray-200 dark:border-gray-700 text-gray-500'}`}
-                        >
-                            {sec.label}
-                        </button>
+                        <button key={idx} onClick={() => setCurrentSectionIndex(idx)} className={`flex-shrink-0 px-3 py-1 rounded-full text-[10px] font-bold transition-all border ${currentSectionIndex === idx ? 'bg-blue-600 border-blue-600 text-white' : 'bg-gray-50 dark:bg-slate-900 border-gray-200 dark:border-gray-700 text-gray-500'}`}>{sec.label}</button>
                     ))}
                 </div>
             )}
-
             <div className="overflow-y-auto pr-1 custom-scrollbar grid grid-cols-2 lg:grid-cols-3 gap-2">
-                {playList.slice(
-                    episodeSections.length > 0 ? episodeSections[currentSectionIndex].startIdx : 0,
-                    episodeSections.length > 0 ? episodeSections[currentSectionIndex].endIdx : playList.length
-                ).map((ep, index) => (
-                    <button 
-                        key={index} 
-                        onClick={() => { 
-                            if (currentUrl === ep.url) return; 
-                            historyTimeRef.current = 0; 
-                            hasAppliedHistorySeek.current = true; 
-                            setCurrentUrl(ep.url); 
-                        }} 
-                        className={`text-[11px] py-2 rounded-lg transition-all truncate border font-medium ${currentUrl === ep.url ? 'bg-blue-600 text-white border-blue-600 shadow-md' : 'bg-gray-50 dark:bg-slate-700/50 text-gray-500 border-gray-200 dark:border-gray-600'}`}
-                    >
-                        {ep.name}
-                    </button>
+                {playList.slice(episodeSections.length > 0 ? episodeSections[currentSectionIndex].startIdx : 0, episodeSections.length > 0 ? episodeSections[currentSectionIndex].endIdx : playList.length).map((ep, index) => (
+                    <button key={index} onClick={() => { if (currentUrl === ep.url) return; historyTimeRef.current = 0; hasAppliedHistorySeek.current = true; setCurrentUrl(ep.url); }} className={`text-[11px] py-2 rounded-lg transition-all truncate border font-medium ${currentUrl === ep.url ? 'bg-blue-600 text-white border-blue-600 shadow-md' : 'bg-gray-50 dark:bg-slate-700/50 text-gray-500 border-gray-200 dark:border-gray-600'}`}>{ep.name}</button>
                 ))}
             </div>
         </div>
@@ -683,7 +610,6 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource, source
         .custom-scrollbar::-webkit-scrollbar { width: 4px; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
         .dark .custom-scrollbar::-webkit-scrollbar-thumb { background: #334155; }
-        /* 隐藏音量按钮 */
         .art-control-volume { display: none !important; }
       `}</style>
     </main>
