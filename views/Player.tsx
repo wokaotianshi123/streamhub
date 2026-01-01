@@ -34,6 +34,11 @@ const EPISODES_PER_SECTION = 30;
 
 const loadScript = (src: string): Promise<void> => {
     return new Promise((resolve, reject) => {
+        // 防止重复加载脚本
+        if (document.querySelector(`script[src="${src}"]`)) {
+            resolve();
+            return;
+        }
         const script = document.createElement('script');
         script.src = src;
         script.async = true;
@@ -43,7 +48,7 @@ const loadScript = (src: string): Promise<void> => {
     });
 };
 
-const waitForGlobal = async (key: 'Artplayer' | 'Hls', timeout = 3000): Promise<boolean> => {
+const waitForGlobal = async (key: 'Artplayer' | 'Hls', timeout = 10000): Promise<boolean> => {
     if (window[key]) return true;
     const start = Date.now();
     while (Date.now() - start < timeout) {
@@ -381,12 +386,13 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource, source
         if (!isMounted) return;
 
         try {
-            let artReady = await waitForGlobal('Artplayer', 3000);
-            let hlsReady = await waitForGlobal('Hls', 3000);
-            if (!artReady) { await loadScript("https://cdnjs.cloudflare.com/ajax/libs/artplayer/5.3.0/artplayer.js"); artReady = await waitForGlobal('Artplayer', 5000); }
-            if (!hlsReady) { await loadScript("https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.20/hls.min.js"); hlsReady = await waitForGlobal('Hls', 5000); }
+            let artReady = await waitForGlobal('Artplayer', 5000);
+            let hlsReady = await waitForGlobal('Hls', 5000);
+            if (!artReady) { await loadScript("https://cdnjs.cloudflare.com/ajax/libs/artplayer/5.3.0/artplayer.js"); artReady = await waitForGlobal('Artplayer', 10000); }
+            if (!hlsReady) { await loadScript("https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.20/hls.min.js"); hlsReady = await waitForGlobal('Hls', 10000); }
 
             if (!isMounted) return;
+            if (!window.Artplayer) throw new Error("Artplayer load failed");
 
             if (artRef.current) {
                 await artRef.current.switchUrl(finalUrl);
@@ -419,7 +425,7 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource, source
                     airplay: false,
                     customType: {
                         m3u8: function (video: HTMLVideoElement, url: string, artInstance: any) {
-                            if (window.Hls.isSupported()) {
+                            if (window.Hls && window.Hls.isSupported()) {
                                 const hls = new window.Hls(HLS_CONFIG);
                                 hls.loadSource(url);
                                 hls.attachMedia(video);
@@ -439,20 +445,31 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource, source
                             position: 'right',
                             html: getButtonHtml('片头', skipConfigRef.current.intro, skipConfigRef.current.intro > 0, '33, 150, 243'),
                             tooltip: '设置当前位置为片头跳过点',
-                            click: function (item: any, event: Event) {
-                                // Correct context: 'this' is art instance
-                                const art = this as any;
+                            click: function () {
+                                const art = artRef.current as any;
+                                if (!art) return;
                                 const time = art.currentTime;
-                                const config = { ...skipConfigRef.current, intro: time };
+                                const currentIntro = skipConfigRef.current.intro;
+                                
+                                // 智能逻辑：如果当前播放时间与已设置的片头时间相近（<2秒），则视为"取消"操作
+                                // 否则视为"更新"操作
+                                let newIntro = 0;
+                                if (currentIntro > 0 && Math.abs(currentIntro - time) < 2) {
+                                    newIntro = 0; // 取消
+                                } else {
+                                    newIntro = time; // 设置/更新
+                                }
+
+                                const config = { ...skipConfigRef.current, intro: newIntro };
                                 skipConfigRef.current = config;
                                 setSkipConfig(movieId, config);
                                 
                                 art.controls.update({
                                     name: 'skip-intro',
-                                    html: getButtonHtml('片头', time, true, '33, 150, 243')
+                                    html: getButtonHtml('片头', newIntro, newIntro > 0, '33, 150, 243')
                                 });
                                 
-                                if (art.notice) art.notice.show = `片头跳过点已设为: ${Math.floor(time)}s`;
+                                if (art.notice) art.notice.show = newIntro > 0 ? `片头跳过点已设为: ${Math.floor(newIntro)}s` : `已取消片头跳过`;
                             },
                         },
                         {
@@ -460,22 +477,34 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource, source
                             position: 'right',
                             html: getButtonHtml('片尾', skipConfigRef.current.outroOffset, skipConfigRef.current.outroOffset > 0, '255, 152, 0'),
                             tooltip: '设置当前位置为片尾跳过点',
-                            click: function (item: any, event: Event) {
-                                const art = this as any;
+                            click: function () {
+                                const art = artRef.current as any;
+                                if (!art) return;
                                 const time = art.currentTime;
                                 const duration = art.duration || 0;
                                 if (duration <= 0) return;
+                                
                                 const offset = duration - time;
-                                const config = { ...skipConfigRef.current, outroOffset: offset };
+                                const currentOutro = skipConfigRef.current.outroOffset;
+                                
+                                // 智能逻辑：如果当前计算出的片尾偏移量与已设置的相近（<2秒），则视为"取消"操作
+                                let newOutro = 0;
+                                if (currentOutro > 0 && Math.abs(currentOutro - offset) < 2) {
+                                    newOutro = 0; // 取消
+                                } else {
+                                    newOutro = offset; // 设置/更新
+                                }
+                                
+                                const config = { ...skipConfigRef.current, outroOffset: newOutro };
                                 skipConfigRef.current = config;
                                 setSkipConfig(movieId, config);
                                 
                                 art.controls.update({
                                     name: 'skip-outro',
-                                    html: getButtonHtml('片尾', offset, true, '255, 152, 0')
+                                    html: getButtonHtml('片尾', newOutro, newOutro > 0, '255, 152, 0')
                                 });
 
-                                if (art.notice) art.notice.show = `片尾跳过点已设为距结尾: ${Math.floor(offset)}s`;
+                                if (art.notice) art.notice.show = newOutro > 0 ? `片尾跳过点已设为距结尾: ${Math.floor(newOutro)}s` : `已取消片尾跳过`;
                             },
                         },
                     ],
@@ -506,7 +535,10 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource, source
 
                 art.on('video:ended', () => { playNextEpisode(); });
             }
-        } catch (e) { setCleanStatus('播放器加载失败'); }
+        } catch (e) { 
+            console.error(e);
+            setCleanStatus('播放器加载失败'); 
+        }
     };
 
     playVideo();
