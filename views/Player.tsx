@@ -348,7 +348,7 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource, source
         safeShowNotice(`即将播放: ${nextEp.name}`);
         setTimeout(() => { 
             historyTimeRef.current = 0; 
-            hasAppliedHistorySeek.current = true; // 标记已处理seek，避免initVideoReady逻辑再次使用historyTime
+            hasAppliedHistorySeek.current = true; 
             setCurrentUrl(nextEp.url); 
         }, 1500);
     }
@@ -369,6 +369,7 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource, source
         }
     }
 
+    // 维持之前的全屏状态
     if (isWebFullscreenRef.current) art.fullscreenWeb = true;
     if (isFullscreenRef.current) art.fullscreen = true;
   };
@@ -427,9 +428,10 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource, source
             if (!isMounted) return;
 
             if (artRef.current) {
-                // 复用实例：切换 URL
+                // 复用实例：切换 URL 并触发 Ready
                 await artRef.current.switchUrl(finalUrl);
                 handleVideoReady(artRef.current);
+                // 确保 switchUrl 后依然绑定ended事件（Artplayer switchUrl 通常保留之前的事件，但为保险这里做一次状态刷新）
             } else {
                 // 新建实例
                 const ArtplayerConstructor = window.Artplayer;
@@ -479,20 +481,19 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource, source
                             position: 'right',
                             html: getButtonHtml('片头', skipConfigRef.current.intro, skipConfigRef.current.intro > 0, '33, 150, 243'),
                             tooltip: '设置当前位置为片头跳过点',
-                            click: function () {
-                                const art = artRef.current;
-                                if (!art) return;
-                                const time = art.currentTime;
+                            click: function (artInstance: any) {
+                                if (!artInstance) return;
+                                const time = artInstance.currentTime;
                                 const config = { ...skipConfigRef.current, intro: time };
                                 skipConfigRef.current = config;
                                 setSkipConfig(movieId, config);
                                 
-                                art.controls.update({
+                                artInstance.controls.update({
                                     name: 'skip-intro',
                                     html: getButtonHtml('片头', time, true, '33, 150, 243')
                                 });
                                 
-                                if (art.notice) art.notice.show = `片头跳过点已设为: ${Math.floor(time)}s`;
+                                if (artInstance.notice) artInstance.notice.show = `片头跳过点已设为: ${Math.floor(time)}s`;
                             },
                         },
                         {
@@ -500,23 +501,22 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource, source
                             position: 'right',
                             html: getButtonHtml('片尾', skipConfigRef.current.outroOffset, skipConfigRef.current.outroOffset > 0, '255, 152, 0'),
                             tooltip: '设置当前位置为片尾跳过点',
-                            click: function () {
-                                const art = artRef.current;
-                                if (!art) return;
-                                const time = art.currentTime;
-                                const duration = art.duration || 0;
+                            click: function (artInstance: any) {
+                                if (!artInstance) return;
+                                const time = artInstance.currentTime;
+                                const duration = artInstance.duration || 0;
                                 if (duration <= 0) return;
                                 const offset = duration - time;
                                 const config = { ...skipConfigRef.current, outroOffset: offset };
                                 skipConfigRef.current = config;
                                 setSkipConfig(movieId, config);
                                 
-                                art.controls.update({
+                                artInstance.controls.update({
                                     name: 'skip-outro',
                                     html: getButtonHtml('片尾', offset, true, '255, 152, 0')
                                 });
 
-                                if (art.notice) art.notice.show = `片尾跳过点已设为距结尾: ${Math.floor(offset)}s`;
+                                if (artInstance.notice) artInstance.notice.show = `片尾跳过点已设为距结尾: ${Math.floor(offset)}s`;
                             },
                         },
                     ],
@@ -560,8 +560,6 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource, source
     return () => {
         isMounted = false;
         if (cleanTimeoutId) clearTimeout(cleanTimeoutId);
-        // 不再此处销毁播放器，仅清理 blob URL
-        // 播放器销毁移至 movieId 变更的 effect
     };
   }, [currentUrl, movieId, effectiveAccEnabled]);
 
@@ -681,7 +679,13 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource, source
             </div>
         </div>
       </section>
-      <style>{`.custom-scrollbar::-webkit-scrollbar { width: 4px; } .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; } .dark .custom-scrollbar::-webkit-scrollbar-thumb { background: #334155; }`}</style>
+      <style>{`
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        .dark .custom-scrollbar::-webkit-scrollbar-thumb { background: #334155; }
+        /* 隐藏音量按钮 */
+        .art-control-volume { display: none !important; }
+      `}</style>
     </main>
   );
 };
