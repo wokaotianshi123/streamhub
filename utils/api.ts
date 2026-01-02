@@ -179,7 +179,7 @@ export const fetchSources = async (): Promise<Source[]> => {
       { name: '天空资源', api: 'https://api.tiankongapi.com/api.php/provide/vod/' }
   ];
   try {
-    const targetUrl = 'https://a.wokaotianshi.eu.org/jgcj/zcying.json';
+    const targetUrl = 'https://a.wokaotianshi.eu.org/jgcj/zyvying.json';
     const jsonText = await fetchViaProxy(targetUrl);
     const data = JSON.parse(jsonText);
     if (Array.isArray(data) && data.length > 0) return data.map((item: any) => ({ name: item.name, api: item.api }));

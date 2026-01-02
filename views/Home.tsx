@@ -27,6 +27,12 @@ import {
 const ORIGINAL_MOVIE_TAGS = ['热门', '最新', '经典', '豆瓣高分', '冷门佳片', '华语', '欧美', '韩国', '日本', '动作', '喜剧', '爱情', '科幻', '悬疑', '恐怖', '治愈'];
 const ORIGINAL_TV_TAGS = ['热门', '美剧', '英剧', '韩剧', '日剧', '国产剧', '港剧', '日本动画', '综艺', '纪录片'];
 
+const REMOTE_SOURCE_PRESETS = [
+    { name: '默认采集源', url: 'https://a.wokaotianshi.eu.org/jgcj/zcying.json' },
+    { name: '精简源(代理)', url: 'https://lunatvz.wofuck.dpdns.org/?format=1&source=jingjian&prefix=https://cfkua.wokaotianshi.eu.org/' },
+    { name: '备用采集源', url: 'https://a.wokaotianshi.eu.org/jgcj/zyvying.json' }
+];
+
 interface MaintenanceStats {
     duplicates: number;
     dead: number;
@@ -85,7 +91,7 @@ const Home: React.FC<ExtendedHomeProps> = ({
   // 导入导出相关的状态
   const sourceFileRef = useRef<HTMLInputElement>(null);
   const backupFileRef = useRef<HTMLInputElement>(null);
-  const [remoteSourceUrl, setRemoteSourceUrl] = useState('https://lunatvz.wofuck.dpdns.org/?format=1&source=jingjian&prefix=https://cfkua.wokaotianshi.eu.org/');
+  const [remoteSourceUrl, setRemoteSourceUrl] = useState(REMOTE_SOURCE_PRESETS[0].url);
   const [remoteBackupUrl, setRemoteBackupUrl] = useState('');
   const [isImporting, setIsImporting] = useState(false);
   const [copiedUrl, setCopiedUrl] = useState<string | null>(null);
@@ -487,17 +493,32 @@ const Home: React.FC<ExtendedHomeProps> = ({
                     </div>
                     {/* 远程源导入框 */}
                     <div className="flex flex-col sm:flex-row gap-2 pt-2 border-t border-gray-100 dark:border-gray-700">
-                        <input 
-                            type="url" 
-                            placeholder="输入远程源 JSON 链接..." 
-                            className="flex-1 bg-gray-50 dark:bg-slate-900 border-gray-200 dark:border-gray-700 rounded-xl px-3 py-2 text-xs focus:ring-1 focus:ring-blue-500 outline-none dark:text-white"
-                            value={remoteSourceUrl}
-                            onChange={(e) => setRemoteSourceUrl(e.target.value)}
-                        />
+                        <div className="flex-1 flex gap-2">
+                             <select
+                                className="w-24 bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-gray-700 rounded-xl px-2 py-2 text-xs focus:ring-1 focus:ring-blue-500 outline-none dark:text-white"
+                                onChange={(e) => {
+                                    if(e.target.value) setRemoteSourceUrl(e.target.value);
+                                }}
+                                value={REMOTE_SOURCE_PRESETS.find(p => p.url === remoteSourceUrl) ? remoteSourceUrl : ""}
+                             >
+                                 <option value="" disabled>预设...</option>
+                                 {REMOTE_SOURCE_PRESETS.map((p, idx) => (
+                                     <option key={idx} value={p.url}>{p.name}</option>
+                                 ))}
+                                 {!REMOTE_SOURCE_PRESETS.find(p => p.url === remoteSourceUrl) && <option value={remoteSourceUrl} disabled>自定义</option>}
+                             </select>
+                            <input 
+                                type="url" 
+                                placeholder="输入远程源 JSON 链接..." 
+                                className="flex-1 bg-gray-50 dark:bg-slate-900 border-gray-200 dark:border-gray-700 rounded-xl px-3 py-2 text-xs focus:ring-1 focus:ring-blue-500 outline-none dark:text-white"
+                                value={remoteSourceUrl}
+                                onChange={(e) => setRemoteSourceUrl(e.target.value)}
+                            />
+                        </div>
                         <button 
                             onClick={handleRemoteSourceImport}
                             disabled={isImporting || !remoteSourceUrl}
-                            className={`px-4 py-2 rounded-xl bg-blue-600 text-white text-[10px] font-bold transition-all flex items-center justify-center gap-1 ${isImporting ? 'opacity-50' : 'hover:bg-blue-700 active:scale-95'}`}
+                            className={`w-full sm:w-auto px-4 py-2 rounded-xl bg-blue-600 text-white text-[10px] font-bold transition-all flex items-center justify-center gap-1 ${isImporting ? 'opacity-50' : 'hover:bg-blue-700 active:scale-95'}`}
                         >
                             <Icon name={isImporting ? "sync" : "cloud_download"} className={`text-sm ${isImporting ? 'animate-spin' : ''}`} />
                             网络导入
