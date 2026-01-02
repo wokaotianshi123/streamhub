@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { ViewState, Movie, PlayerProps, Source } from '../types';
 import { Icon } from '../components/Icon';
@@ -143,6 +144,35 @@ const getButtonHtml = (label: string, time: number, isActive: boolean, color: st
     const border = isActive ? `rgba(${color}, 1)` : 'rgba(255,255,255,0.2)';
     const text = isActive ? `${label} ${Math.floor(time)}s` : label;
     return `<span style="font-size: 11px; padding: 2px 10px; cursor: pointer; background: ${bg}; border-radius: 4px; border: 1px solid ${border}; color: white; display: inline-block; min-width: 45px; text-align: center; transition: all 0.2s;">${text}</span>`;
+};
+
+// --- 生成选集列表的 HTML ---
+const generateEpisodeLayerHtml = (list: {name: string, url: string}[], current: string) => {
+    return `
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;border-bottom:1px solid rgba(255,255,255,0.1);padding-bottom:10px;position:sticky;top:0;background:rgba(20,20,20,0.95);z-index:2;">
+            <span style="font-size:16px;font-weight:bold;color:white;">选集列表 (${list.length})</span>
+            <span class="close-layer" style="cursor:pointer;color:#aaa;font-size:20px;padding:0 10px;">✕</span>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill, minmax(80px, 1fr));gap:10px;padding-bottom:20px;">
+            ${list.map((ep) => `
+                <div class="art-ep-item ${ep.url === current ? 'active' : ''}" data-url="${ep.url}" style="
+                    cursor:pointer;
+                    padding:8px 5px;
+                    background:${ep.url === current ? '#2196F3' : 'rgba(255,255,255,0.1)'};
+                    color:${ep.url === current ? 'white' : '#ddd'};
+                    border-radius:6px;
+                    text-align:center;
+                    font-size:12px;
+                    text-overflow:ellipsis;
+                    overflow:hidden;
+                    white-space:nowrap;
+                    border: 1px solid ${ep.url === current ? '#2196F3' : 'transparent'};
+                " onmouseover="this.style.backgroundColor='rgba(255,255,255,0.2)'" onmouseout="this.style.backgroundColor='${ep.url === current ? '#2196F3' : 'rgba(255,255,255,0.1)'}'">
+                    ${ep.name}
+                </div>
+            `).join('')}
+        </div>
+    `;
 };
 
 interface AltSource {
@@ -396,6 +426,11 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource, source
 
             if (artRef.current) {
                 await artRef.current.switchUrl(finalUrl);
+                // 切换URL时，同时更新选集图层的高亮状态
+                const layer = artRef.current.layers.find((l: any) => l.name === 'episode-layer');
+                if (layer && layer.$el) {
+                    layer.$el.innerHTML = generateEpisodeLayerHtml(playListRef.current, currentUrl);
+                }
                 handleVideoReady(artRef.current);
             } else {
                 const ArtplayerConstructor = window.Artplayer;
@@ -439,6 +474,49 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource, source
                             }
                         }
                     },
+                    layers: [
+                        {
+                            name: 'episode-layer',
+                            html: generateEpisodeLayerHtml(playListRef.current, currentUrl),
+                            style: {
+                                display: 'none',
+                                position: 'absolute',
+                                top: '0',
+                                right: '0',
+                                bottom: '0',
+                                width: '300px',
+                                maxWidth: '80%',
+                                backgroundColor: 'rgba(20, 20, 20, 0.95)',
+                                backdropFilter: 'blur(10px)',
+                                zIndex: 100,
+                                flexDirection: 'column',
+                                padding: '20px',
+                                overflowY: 'auto',
+                                transform: 'translateX(0)',
+                                transition: 'all 0.3s ease'
+                            },
+                            mounted: function($el: HTMLElement) {
+                                // 使用事件委托处理点击
+                                $el.addEventListener('click', (e) => {
+                                    const target = e.target as HTMLElement;
+                                    // 处理选集点击
+                                    if (target.classList.contains('art-ep-item')) {
+                                        const url = target.dataset.url;
+                                        if (url && url !== currentUrlRef.current) {
+                                            historyTimeRef.current = 0;
+                                            hasAppliedHistorySeek.current = true;
+                                            setCurrentUrl(url);
+                                            $el.style.display = 'none';
+                                        }
+                                    }
+                                    // 处理关闭按钮或背景点击
+                                    if (target.classList.contains('close-layer') || target === $el) {
+                                         $el.style.display = 'none';
+                                    }
+                                });
+                            }
+                        }
+                    ],
                     controls: [
                         {
                             name: 'skip-intro',
@@ -450,19 +528,14 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource, source
                                 if (!art) return;
                                 const time = art.currentTime;
                                 const currentIntro = skipConfigRef.current.intro;
-                                
-                                // 简单切换逻辑：如果有值则取消，无值则设置
                                 const newIntro = currentIntro > 0 ? 0 : time;
-
                                 const config = { ...skipConfigRef.current, intro: newIntro };
                                 skipConfigRef.current = config;
                                 setSkipConfig(movieId, config);
-                                
                                 art.controls.update({
                                     name: 'skip-intro',
                                     html: getButtonHtml('片头', newIntro, newIntro > 0, '33, 150, 243')
                                 });
-                                
                                 if (art.notice) art.notice.show = newIntro > 0 ? `片头跳过点已设为: ${Math.floor(newIntro)}s` : `已取消片头跳过`;
                             },
                         },
@@ -477,30 +550,42 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource, source
                                 const time = art.currentTime;
                                 const duration = art.duration || 0;
                                 if (duration <= 0) return;
-                                
                                 const offset = duration - time;
                                 const currentOutro = skipConfigRef.current.outroOffset;
-                                
-                                // 简单切换逻辑：如果有值则取消，无值则设置
                                 const newOutro = currentOutro > 0 ? 0 : offset;
-                                
                                 const config = { ...skipConfigRef.current, outroOffset: newOutro };
                                 skipConfigRef.current = config;
                                 setSkipConfig(movieId, config);
-                                
                                 art.controls.update({
                                     name: 'skip-outro',
                                     html: getButtonHtml('片尾', newOutro, newOutro > 0, '255, 152, 0')
                                 });
-
                                 if (art.notice) art.notice.show = newOutro > 0 ? `片尾跳过点已设为距结尾: ${Math.floor(newOutro)}s` : `已取消片尾跳过`;
                             },
-                        },
+                        }
                     ],
                 });
                 artRef.current = art;
 
-                art.on('ready', () => handleVideoReady(art));
+                art.on('ready', () => {
+                    handleVideoReady(art);
+                    // 添加选集到设置菜单
+                    art.setting.add({
+                        html: '选集列表',
+                        width: 250,
+                        tooltip: '查看',
+                        icon: '<svg xmlns="http://www.w3.org/2000/svg" height="22" width="22" viewBox="0 0 48 48"><path d="M11 39h26v-3H11v3Zm0-12h26v-3H11v3Zm0-12h26v-3H11v3Z" fill="#fff"/></svg>',
+                        click: function () {
+                             const layer = art.layers.find((l: any) => l.name === 'episode-layer');
+                             if (layer && layer.$el) {
+                                  layer.$el.innerHTML = generateEpisodeLayerHtml(playListRef.current, currentUrlRef.current);
+                                  layer.$el.style.display = 'flex';
+                                  art.setting.show = false;
+                             }
+                        }
+                    });
+                });
+
                 art.on('fullscreen', (state: boolean) => { isFullscreenRef.current = state; });
                 art.on('fullscreenWeb', (state: boolean) => { isWebFullscreenRef.current = state; });
                 art.on('video:ratechange', () => { playbackRateRef.current = art.playbackRate; });
