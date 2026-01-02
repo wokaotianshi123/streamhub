@@ -146,28 +146,17 @@ const getButtonHtml = (label: string, time: number, isActive: boolean, color: st
     return `<span style="font-size: 11px; padding: 2px 10px; cursor: pointer; background: ${bg}; border-radius: 4px; border: 1px solid ${border}; color: white; display: inline-block; min-width: 45px; text-align: center; transition: all 0.2s;">${text}</span>`;
 };
 
-// --- 生成选集列表的 HTML ---
+// --- 生成选集列表的 HTML (优化版) ---
 const generateEpisodeLayerHtml = (list: {name: string, url: string}[], current: string) => {
+    if (!list || list.length === 0) return '<div style="color:#aaa;text-align:center;padding:20px;">暂无选集</div>';
     return `
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;border-bottom:1px solid rgba(255,255,255,0.1);padding-bottom:10px;position:sticky;top:0;background:rgba(20,20,20,0.95);z-index:2;">
-            <span style="font-size:16px;font-weight:bold;color:white;">选集列表 (${list.length})</span>
-            <span class="close-layer" style="cursor:pointer;color:#aaa;font-size:20px;padding:0 10px;">✕</span>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;padding-bottom:10px;border-bottom:1px solid rgba(255,255,255,0.1);">
+            <span style="font-size:16px;font-weight:bold;color:white;">选集 (${list.length})</span>
+            <span class="art-ep-close" style="font-size:20px;color:#aaa;line-height:1;cursor:pointer;">✕</span>
         </div>
-        <div style="display:grid;grid-template-columns:repeat(auto-fill, minmax(80px, 1fr));gap:10px;padding-bottom:20px;">
-            ${list.map((ep) => `
-                <div class="art-ep-item ${ep.url === current ? 'active' : ''}" data-url="${ep.url}" style="
-                    cursor:pointer;
-                    padding:8px 5px;
-                    background:${ep.url === current ? '#2196F3' : 'rgba(255,255,255,0.1)'};
-                    color:${ep.url === current ? 'white' : '#ddd'};
-                    border-radius:6px;
-                    text-align:center;
-                    font-size:12px;
-                    text-overflow:ellipsis;
-                    overflow:hidden;
-                    white-space:nowrap;
-                    border: 1px solid ${ep.url === current ? '#2196F3' : 'transparent'};
-                " onmouseover="this.style.backgroundColor='rgba(255,255,255,0.2)'" onmouseout="this.style.backgroundColor='${ep.url === current ? '#2196F3' : 'rgba(255,255,255,0.1)'}'">
+        <div class="custom-scrollbar" style="display:grid;grid-template-columns:repeat(auto-fill, minmax(80px, 1fr));gap:8px;overflow-y:auto;flex:1;padding-right:5px;align-content:start;">
+            ${list.map(ep => `
+                <div class="art-ep-item ${ep.url === current ? 'active' : ''}" data-url="${ep.url}" title="${ep.name}">
                     ${ep.name}
                 </div>
             `).join('')}
@@ -427,9 +416,9 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource, source
             if (artRef.current) {
                 await artRef.current.switchUrl(finalUrl);
                 // 切换URL时，同时更新选集图层的高亮状态
-                const layer = artRef.current.layers.find((l: any) => l.name === 'episode-layer');
-                if (layer && layer.$el) {
-                    layer.$el.innerHTML = generateEpisodeLayerHtml(playListRef.current, currentUrl);
+                const layerEl = artRef.current.template.$container.querySelector('.art-ep-layer-box');
+                if (layerEl) {
+                    layerEl.innerHTML = generateEpisodeLayerHtml(playListRef.current, currentUrl);
                 }
                 handleVideoReady(artRef.current);
             } else {
@@ -478,6 +467,7 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource, source
                         {
                             name: 'episode-layer',
                             html: generateEpisodeLayerHtml(playListRef.current, currentUrl),
+                            class: 'art-ep-layer-box', // 添加特定class方便查找
                             style: {
                                 display: 'none',
                                 position: 'absolute',
@@ -488,30 +478,33 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource, source
                                 maxWidth: '80%',
                                 backgroundColor: 'rgba(20, 20, 20, 0.95)',
                                 backdropFilter: 'blur(10px)',
-                                zIndex: 100,
+                                zIndex: 110,
                                 flexDirection: 'column',
                                 padding: '20px',
-                                overflowY: 'auto',
+                                overflowY: 'hidden', // 使用 flex column 布局，内容区滚动
                                 transform: 'translateX(0)',
-                                transition: 'all 0.3s ease'
+                                borderLeft: '1px solid rgba(255,255,255,0.1)'
                             },
                             mounted: function($el: HTMLElement) {
                                 // 使用事件委托处理点击
                                 $el.addEventListener('click', (e) => {
                                     const target = e.target as HTMLElement;
-                                    // 处理选集点击
-                                    if (target.classList.contains('art-ep-item')) {
-                                        const url = target.dataset.url;
-                                        if (url && url !== currentUrlRef.current) {
-                                            historyTimeRef.current = 0;
-                                            hasAppliedHistorySeek.current = true;
-                                            setCurrentUrl(url);
-                                            $el.style.display = 'none';
-                                        }
-                                    }
-                                    // 处理关闭按钮或背景点击
-                                    if (target.classList.contains('close-layer') || target === $el) {
+                                    const closeBtn = target.closest('.art-ep-close');
+                                    const item = target.closest('.art-ep-item');
+                                    
+                                    if (closeBtn || target === $el) {
                                          $el.style.display = 'none';
+                                         return;
+                                    }
+                                    
+                                    if (item) {
+                                         const url = (item as HTMLElement).dataset.url;
+                                         if (url && url !== currentUrlRef.current) {
+                                              historyTimeRef.current = 0;
+                                              hasAppliedHistorySeek.current = true;
+                                              setCurrentUrl(url);
+                                              $el.style.display = 'none';
+                                         }
                                     }
                                 });
                             }
@@ -524,7 +517,7 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource, source
                             html: getButtonHtml('片头', skipConfigRef.current.intro, skipConfigRef.current.intro > 0, '33, 150, 243'),
                             tooltip: '设置/取消 片头跳过点',
                             click: function () {
-                                const art = artRef.current as any;
+                                const art = artRef.current;
                                 if (!art) return;
                                 const time = art.currentTime;
                                 const currentIntro = skipConfigRef.current.intro;
@@ -545,7 +538,7 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource, source
                             html: getButtonHtml('片尾', skipConfigRef.current.outroOffset, skipConfigRef.current.outroOffset > 0, '255, 152, 0'),
                             tooltip: '设置/取消 片尾跳过点',
                             click: function () {
-                                const art = artRef.current as any;
+                                const art = artRef.current;
                                 if (!art) return;
                                 const time = art.currentTime;
                                 const duration = art.duration || 0;
@@ -562,6 +555,23 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource, source
                                 });
                                 if (art.notice) art.notice.show = newOutro > 0 ? `片尾跳过点已设为距结尾: ${Math.floor(newOutro)}s` : `已取消片尾跳过`;
                             },
+                        },
+                        {
+                            name: 'show-episodes',
+                            position: 'right',
+                            html: `<div style="display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:13px;padding:2px 8px;border-radius:4px;background:rgba(255,255,255,0.1);color:white;transition:all 0.2s;">选集</div>`,
+                            tooltip: '选集列表',
+                            click: function () {
+                                const art = artRef.current;
+                                if (!art) return;
+                                // 通过 class 直接查找 DOM 元素，比 art.layers.find 更可靠
+                                const layerEl = art.template.$container.querySelector('.art-ep-layer-box');
+                                if (layerEl) {
+                                     // 确保内容是最新的
+                                     layerEl.innerHTML = generateEpisodeLayerHtml(playListRef.current, currentUrlRef.current);
+                                     layerEl.style.display = 'flex';
+                                }
+                            }
                         }
                     ],
                 });
@@ -569,21 +579,6 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource, source
 
                 art.on('ready', () => {
                     handleVideoReady(art);
-                    // 添加选集到设置菜单
-                    art.setting.add({
-                        html: '选集列表',
-                        width: 250,
-                        tooltip: '查看',
-                        icon: '<svg xmlns="http://www.w3.org/2000/svg" height="22" width="22" viewBox="0 0 48 48"><path d="M11 39h26v-3H11v3Zm0-12h26v-3H11v3Zm0-12h26v-3H11v3Z" fill="#fff"/></svg>',
-                        click: function () {
-                             const layer = art.layers.find((l: any) => l.name === 'episode-layer');
-                             if (layer && layer.$el) {
-                                  layer.$el.innerHTML = generateEpisodeLayerHtml(playListRef.current, currentUrlRef.current);
-                                  layer.$el.style.display = 'flex';
-                                  art.setting.show = false;
-                             }
-                        }
-                    });
                 });
 
                 art.on('fullscreen', (state: boolean) => { isFullscreenRef.current = state; });
@@ -628,6 +623,42 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource, source
 
   return (
     <main className="container mx-auto px-4 py-6 space-y-8 animate-fadeIn relative">
+       {/* 注入播放器相关样式 */}
+       <style>{`
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        .dark .custom-scrollbar::-webkit-scrollbar-thumb { background: #334155; }
+        .art-control-volume { display: none !important; }
+        
+        /* 选集列表样式 */
+        .art-ep-item {
+            cursor: pointer;
+            padding: 8px 5px;
+            background: rgba(255,255,255,0.1);
+            color: #ddd;
+            border-radius: 6px;
+            text-align: center;
+            font-size: 12px;
+            border: 1px solid transparent;
+            transition: all 0.2s;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .art-ep-item:hover {
+            background: rgba(255,255,255,0.25);
+            color: white;
+        }
+        .art-ep-item.active {
+            background: #2196F3;
+            color: white;
+            border-color: #2196F3;
+        }
+        .art-ep-close:hover {
+            color: white !important;
+        }
+      `}</style>
+
       {showShareModal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center px-4">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowShareModal(false)}></div>
@@ -712,12 +743,6 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource, source
             </div>
         </div>
       </section>
-      <style>{`
-        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
-        .dark .custom-scrollbar::-webkit-scrollbar-thumb { background: #334155; }
-        .art-control-volume { display: none !important; }
-      `}</style>
     </main>
   );
 };
