@@ -1,9 +1,6 @@
 
-export const config = {
-  runtime: 'edge',
-};
-
-export default async function handler(request) {
+export async function onRequest(context) {
+  const { request } = context;
   const url = new URL(request.url);
   const targetUrl = url.searchParams.get('url');
 
@@ -28,7 +25,6 @@ export default async function handler(request) {
       headers: {
         'content-type': response.headers.get('content-type') || 'text/plain',
         'Access-Control-Allow-Origin': '*',
-        'Cache-Control': 's-maxage=3600, stale-while-revalidate'
       },
     });
   } catch (error) {
