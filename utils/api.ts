@@ -5,6 +5,9 @@ import { Movie, Category, Source } from '../types';
 const isElectron = typeof navigator !== 'undefined' && 
   (navigator.userAgent.toLowerCase().includes(' electron/') || (window as any).process?.type === 'renderer');
 
+// Detect HBuilderX (5+ App) environment
+const isHBuilder = typeof navigator !== 'undefined' && (navigator.userAgent.indexOf('Html5Plus') > -1 || (window as any).plus);
+
 // 代理配置仅用于 API 请求
 interface ProxyConfig {
   url: string;
@@ -12,9 +15,9 @@ interface ProxyConfig {
 }
 
 const PROXIES: ProxyConfig[] = [
-  // Electron 环境下优先使用直连 (依赖 webSecurity: false)
-  // url 为空字符串表示不添加前缀，实现直连
-  ...(isElectron ? [{ url: '', type: 'append' }] as ProxyConfig[] : []),
+  // Electron 或 HBuilderX (App) 环境下优先使用直连
+  // 5+ App 环境下默认不受同源策略限制，直接请求速度最快
+  ...(isElectron || isHBuilder ? [{ url: '', type: 'append' }] as ProxyConfig[] : []),
   // Web 环境下使用本地 Proxy 或公共 Proxy
   { url: '/api/proxy?url=', type: 'query' },
   { url: 'https://api.codetabs.com/v1/proxy?quest=', type: 'query' },
