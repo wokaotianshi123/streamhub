@@ -12,20 +12,37 @@ interface MovieCardProps {
 const MovieCard: React.FC<MovieCardProps> = ({ movie, viewType, onClick }) => {
   const isPlayerView = viewType === 'PLAYER';
   const showPlayButton = viewType === 'SEARCH' || isPlayerView;
+  
+  // 图片加载状态管理
   const [imgSrc, setImgSrc] = useState<string>(movie.image);
-  const [hasError, setHasError] = useState(false);
+  const [isRetrying, setIsRetrying] = useState(false); // 是否正在尝试代理加载
+  const [hasError, setHasError] = useState(false);     // 是否最终失败
 
   useEffect(() => {
     setImgSrc(movie.image);
+    setIsRetrying(false);
     setHasError(false);
   }, [movie.image]);
 
   const handleImageError = () => {
-    if (!hasError) {
-      setHasError(true);
-      // 占位图：包含影片标题的文字占位符
-      setImgSrc(`https://images.placeholders.dev/?width=300&height=450&text=${encodeURIComponent(movie.title)}&fontSize=20&bgColor=%231e293b&textColor=%23ffffff`);
+    if (hasError) return;
+
+    // 策略1: 豆瓣图片防盗链处理
+    // 如果当前是豆瓣图片且尚未通过代理重试
+    if (imgSrc && imgSrc.includes('doubanio.com') && !isRetrying) {
+        setIsRetrying(true);
+        // 使用 images.weserv.nl 代理服务
+        // 1. 去除协议头 (http:// 或 https://)
+        // 2. 将纯域名路径传给 weserv
+        const cleanUrl = imgSrc.replace(/^https?:\/\//, '');
+        setImgSrc(`https://images.weserv.nl/?url=${encodeURIComponent(cleanUrl)}`);
+        return;
     }
+
+    // 策略2: 最终兜底
+    // 如果不是豆瓣图片，或者代理尝试后依然失败，显示占位图
+    setHasError(true);
+    setImgSrc(`https://images.placeholders.dev/?width=300&height=450&text=${encodeURIComponent(movie.title || '暂无封面')}&fontSize=20&bgColor=%231e293b&textColor=%23ffffff`);
   };
 
   return (
@@ -37,7 +54,8 @@ const MovieCard: React.FC<MovieCardProps> = ({ movie, viewType, onClick }) => {
           alt={movie.title} 
           className="w-full h-full object-cover transform group-hover:scale-110 transition-transform duration-700"
           loading="lazy"
-          referrerPolicy="no-referrer" // 关键：解决防盗链
+          // 关键：不发送 Referer，这对于部分允许空 Referer 的豆瓣节点有效
+          referrerPolicy="no-referrer"
           onError={handleImageError}
         />
         

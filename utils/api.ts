@@ -258,15 +258,64 @@ export const fetchDoubanSubjects = async (type: 'movie' | 'tv', tag: string, pag
     const data = JSON.parse(text);
     if (!data || !data.subjects) return [];
     
-    return data.subjects.map((item: any) => ({
-      id: (item.id || '').toString(),
-      title: item.title || '',
-      year: '', 
-      genre: tag,
-      image: item.cover || '', 
-      rating: parseFloat(item.rate) || 0,
-      isDouban: true
-    }));
+    // 并行获取 WMDB 图片，提升加载速度
+    const tasks = data.subjects.map(async (item: any) => {
+        // 1. 默认备选：使用 weserv 代理原豆瓣图片 (防止 WMDB 失败)
+        let imageUrl = item.cover || '';
+        if (imageUrl && !imageUrl.startsWith('data:')) {
+            const cleanUrl = imageUrl.replace(/^https?:\/\//, '');
+            imageUrl = `https://images.weserv.nl/?url=${encodeURIComponent(cleanUrl)}`;
+        }
+
+        // 2. 主要尝试：从 WMDB 获取高清无防盗链图片
+        // 豆瓣 API 返回的 id 即为 douban_id
+        if (item.id) {
+            try {
+                // 随机延迟 0-1500ms，错峰请求，显著降低被 WMDB 限制频率的概率
+                const delay = Math.floor(Math.random() * 1500);
+                await new Promise(resolve => setTimeout(resolve, delay));
+
+                // 设置较短超时(3秒)，适应直连，给予足够时间响应
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 3000);
+                
+                // 模拟人工浏览器请求头，增加成功率
+                const wmdbRes = await fetch(`https://api.wmdb.tv/movie/api?id=${item.id}`, {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+                        'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6',
+                        'Cache-Control': 'max-age=0'
+                    },
+                    referrerPolicy: 'no-referrer', // 关键：不发送来源，避免反爬限制
+                    credentials: 'omit',
+                    signal: controller.signal
+                });
+                clearTimeout(timeoutId);
+
+                if (wmdbRes.ok) {
+                    const wmdbData = await wmdbRes.json();
+                    if (wmdbData && wmdbData.poster) {
+                        imageUrl = wmdbData.poster;
+                    }
+                }
+            } catch (e) {
+                // WMDB 获取失败，静默失败，自动使用上一步准备好的备选图片
+            }
+        }
+
+        return {
+            id: (item.id || '').toString(),
+            title: item.title || '',
+            year: '', 
+            genre: tag,
+            image: imageUrl, 
+            rating: parseFloat(item.rate) || 0,
+            isDouban: true
+        };
+    });
+
+    return await Promise.all(tasks);
   } catch (e) {
     return [];
   }
