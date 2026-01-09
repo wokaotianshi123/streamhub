@@ -2,7 +2,6 @@
 import React, { useState, useEffect } from 'react';
 import { Movie, ViewState } from '../types';
 import { Icon } from './Icon';
-import { getDoubanProxyUrl } from '../utils/storage';
 
 interface MovieCardProps {
   movie: Movie;
@@ -28,9 +27,9 @@ const MovieCard: React.FC<MovieCardProps> = ({ movie, viewType, onClick }) => {
   const handleImageError = () => {
     if (hasError) return;
 
-    // 获取潜在的原始 URL (剥离动态代理，防止双重代理失败)
+    // 获取潜在的原始 URL (剥离 yangzirui 代理，防止双重代理失败)
     let originalUrl = movie.image;
-    const proxyPrefix = getDoubanProxyUrl();
+    const proxyPrefix = 'https://api.yangzirui.com/proxy/';
     if (originalUrl && originalUrl.startsWith(proxyPrefix)) {
         originalUrl = originalUrl.replace(proxyPrefix, '');
     }

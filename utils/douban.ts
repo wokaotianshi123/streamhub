@@ -1,18 +1,19 @@
 
 import { Movie } from '../types';
 import { fetchViaProxy } from './api';
-import { getDoubanProxyUrl } from './storage';
 
 // 内存缓存，避免重复请求
 const imageCache = new Map<string, string | null>();
 
+// 豆瓣图片代理服务
+const DOUBAN_PROXY = 'https://api.yangzirui.com/proxy/';
+
 // 辅助函数：为豆瓣图片添加代理
 const wrapDoubanImage = (url: string) => {
     if (!url) return '';
-    const proxy = getDoubanProxyUrl();
     // 仅处理 doubanio.com 且未被代理过的链接
-    if (url.includes('doubanio.com') && !url.startsWith(proxy)) {
-        return `${proxy}${url}`;
+    if (url.includes('doubanio.com') && !url.startsWith(DOUBAN_PROXY)) {
+        return `${DOUBAN_PROXY}${url}`;
     }
     return url;
 };

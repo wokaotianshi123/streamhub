@@ -9,11 +9,8 @@ const CUSTOM_DOUBAN_TAGS_KEY = 'streamhub_custom_douban_tags';
 const LAST_SOURCE_KEY = 'streamhub_last_source_api';
 const ACCELERATION_URL_KEY = 'streamhub_acceleration_url';
 const ACCELERATION_ENABLED_KEY = 'streamhub_acceleration_enabled';
-const DOUBAN_PROXY_KEY = 'streamhub_douban_proxy'; // 新增
 const SKIP_CONFIG_PREFIX = 'streamhub_skip_config_';
 const MAX_HISTORY_ITEMS = 50;
-
-export const DEFAULT_DOUBAN_PROXY = 'https://api.yangzirui.com/proxy/';
 
 // --- Skip Intro/Outro Types ---
 export interface SkipConfig {
@@ -176,7 +173,6 @@ export const resetSourcesToDefault = (): void => {
   localStorage.removeItem(LAST_SOURCE_KEY);
   localStorage.removeItem(ACCELERATION_URL_KEY);
   localStorage.removeItem(ACCELERATION_ENABLED_KEY);
-  localStorage.removeItem(DOUBAN_PROXY_KEY); // Reset proxy
 };
 
 // --- Acceleration Management ---
@@ -189,15 +185,6 @@ export const getAccelerationConfig = (): { url: string, enabled: boolean } => {
 export const setAccelerationConfig = (url: string, enabled: boolean): void => {
     localStorage.setItem(ACCELERATION_URL_KEY, url);
     localStorage.setItem(ACCELERATION_ENABLED_KEY, String(enabled));
-};
-
-// --- Douban Proxy Management ---
-export const getDoubanProxyUrl = (): string => {
-    return localStorage.getItem(DOUBAN_PROXY_KEY) || DEFAULT_DOUBAN_PROXY;
-};
-
-export const setDoubanProxyUrl = (url: string): void => {
-    localStorage.setItem(DOUBAN_PROXY_KEY, url);
 };
 
 // --- Skip Config Management ---
@@ -336,7 +323,6 @@ export const exportFullBackup = () => {
             tv: getCustomDoubanTags('tv')
         },
         acceleration: getAccelerationConfig(),
-        doubanProxy: getDoubanProxyUrl(), // Export Proxy
         skipConfigs: skipConfigs,
         lastSource: getLastUsedSourceApi(),
         version: '1.2'
@@ -363,7 +349,6 @@ export const importFullBackup = (backup: any) => {
             localStorage.setItem(ACCELERATION_URL_KEY, backup.acceleration.url);
             localStorage.setItem(ACCELERATION_ENABLED_KEY, String(backup.acceleration.enabled));
         }
-        if (backup.doubanProxy) localStorage.setItem(DOUBAN_PROXY_KEY, backup.doubanProxy); // Import Proxy
         if (backup.skipConfigs) {
           Object.entries(backup.skipConfigs).forEach(([k, v]) => {
             localStorage.setItem(k, JSON.stringify(v));

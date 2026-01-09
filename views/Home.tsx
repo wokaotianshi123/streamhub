@@ -19,10 +19,7 @@ import {
   importFullBackup,
   getDisabledSourceApis,
   getAccelerationConfig,
-  setAccelerationConfig,
-  getDoubanProxyUrl,
-  setDoubanProxyUrl,
-  DEFAULT_DOUBAN_PROXY
+  setAccelerationConfig
 } from '../utils/storage';
 
 const REMOTE_SOURCE_PRESETS = [
@@ -81,9 +78,6 @@ const Home: React.FC<ExtendedHomeProps> = ({
   // 加速配置状态
   const [accConfig, setAccConfig] = useState(() => getAccelerationConfig());
   const [accUrlInput, setAccUrlInput] = useState(accConfig.url);
-
-  // 豆瓣代理配置状态
-  const [doubanProxyInput, setDoubanProxyInput] = useState(() => getDoubanProxyUrl());
 
   // 导入导出相关的状态
   const sourceFileRef = useRef<HTMLInputElement>(null);
@@ -278,23 +272,6 @@ const Home: React.FC<ExtendedHomeProps> = ({
       setAccelerationConfig(accConfig.url, newState);
       setAccConfig({ ...accConfig, enabled: newState });
       alert(newState ? '加速播放已启用' : '加速播放已禁用');
-  };
-
-  // --- 豆瓣代理设置逻辑 ---
-  const saveDoubanProxyConfig = () => {
-      const url = doubanProxyInput.trim();
-      if (!url) {
-          alert("代理地址不能为空");
-          return;
-      }
-      setDoubanProxyUrl(url);
-      alert('豆瓣代理地址已更新');
-  };
-
-  const resetDoubanProxyConfig = () => {
-      setDoubanProxyInput(DEFAULT_DOUBAN_PROXY);
-      setDoubanProxyUrl(DEFAULT_DOUBAN_PROXY);
-      alert('已恢复默认代理');
   };
 
   const copyToClipboard = async (text: string) => {
@@ -546,7 +523,7 @@ const Home: React.FC<ExtendedHomeProps> = ({
                 </div>
 
                 {/* 3. 加速播放设置 */}
-                <div className="bg-white dark:bg-slate-800 p-4 sm:p-6 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm space-y-5">
+                <div className="bg-white dark:bg-slate-800 p-4 sm:p-6 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm space-y-5 md:col-span-2">
                     <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                         <div className="flex items-center gap-3">
                             <div className="w-10 h-10 bg-green-50 dark:bg-green-900/20 text-green-600 rounded-xl flex items-center justify-center">
@@ -554,7 +531,7 @@ const Home: React.FC<ExtendedHomeProps> = ({
                             </div>
                             <div>
                                 <h3 className="text-sm font-bold dark:text-white">加速播放 (CDN/代理前置)</h3>
-                                <p className="text-[10px] text-gray-500">为每个播放链接添加前置链接</p>
+                                <p className="text-[10px] text-gray-500">为每个播放链接添加前置链接，提升加载速度</p>
                             </div>
                         </div>
                         <div className="flex items-center gap-4 w-full sm:w-auto justify-between sm:justify-start">
@@ -574,51 +551,20 @@ const Home: React.FC<ExtendedHomeProps> = ({
                     <div className="flex flex-col sm:flex-row gap-2 pt-2 border-t border-gray-100 dark:border-gray-700">
                         <input 
                             type="url" 
-                            placeholder="输入加速前置链接..." 
+                            placeholder="输入加速前置链接 (默认: https://cfkua.wokaotianshi.eu.org)..." 
                             className="flex-1 bg-gray-50 dark:bg-slate-900 border-gray-200 dark:border-gray-700 rounded-xl px-4 py-2.5 text-xs focus:ring-1 focus:ring-green-500 outline-none dark:text-white"
                             value={accUrlInput}
                             onChange={(e) => setAccUrlInput(e.target.value)}
                         />
                         <button 
                             onClick={saveAcceleration}
-                            className="px-4 py-2.5 rounded-xl bg-green-600 text-white text-[10px] font-bold hover:bg-green-700 active:scale-95 transition-all flex items-center justify-center gap-1.5"
+                            className="px-6 py-2.5 rounded-xl bg-green-600 text-white text-[10px] font-bold hover:bg-green-700 active:scale-95 transition-all flex items-center justify-center gap-1.5"
                         >
                             <Icon name="save" className="text-sm" />
-                            保存
+                            保存修改
                         </button>
                     </div>
-                </div>
-
-                {/* 4. 豆瓣代理设置 */}
-                <div className="bg-white dark:bg-slate-800 p-4 sm:p-6 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm space-y-5">
-                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                        <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 bg-pink-50 dark:bg-pink-900/20 text-pink-600 rounded-xl flex items-center justify-center">
-                                <Icon name="image" />
-                            </div>
-                            <div>
-                                <h3 className="text-sm font-bold dark:text-white">豆瓣图片代理</h3>
-                                <p className="text-[10px] text-gray-500">解决豆瓣防盗链问题</p>
-                            </div>
-                        </div>
-                        <button onClick={resetDoubanProxyConfig} className="text-[10px] text-gray-400 hover:text-pink-500 underline">恢复默认</button>
-                    </div>
-                    <div className="flex flex-col sm:flex-row gap-2 pt-2 border-t border-gray-100 dark:border-gray-700">
-                        <input 
-                            type="url" 
-                            placeholder={`默认: ${DEFAULT_DOUBAN_PROXY}`} 
-                            className="flex-1 bg-gray-50 dark:bg-slate-900 border-gray-200 dark:border-gray-700 rounded-xl px-4 py-2.5 text-xs focus:ring-1 focus:ring-pink-500 outline-none dark:text-white"
-                            value={doubanProxyInput}
-                            onChange={(e) => setDoubanProxyInput(e.target.value)}
-                        />
-                        <button 
-                            onClick={saveDoubanProxyConfig}
-                            className="px-4 py-2.5 rounded-xl bg-pink-600 text-white text-[10px] font-bold hover:bg-pink-700 active:scale-95 transition-all flex items-center justify-center gap-1.5"
-                        >
-                            <Icon name="save" className="text-sm" />
-                            保存
-                        </button>
-                    </div>
+                    <p className="text-[10px] text-gray-400 italic">注：启用后，播放链接将变为：[前置链接]/[原始链接]（全局生效）</p>
                 </div>
             </div>
 
