@@ -2,9 +2,9 @@
 import React, { useEffect, useState, useLayoutEffect, useRef } from 'react';
 import { Movie, HomeProps, Source } from '../types';
 import MovieCard from '../components/MovieCard';
-import DoubanList from './DoubanList';
+import DoubanModule from './DoubanList'; // Import the new smart module
 import { Icon } from '../components/Icon';
-import { fetchVideoList, fetchDoubanSubjects, fetchViaProxy } from '../utils/api';
+import { fetchVideoList, fetchViaProxy } from '../utils/api';
 import { 
   getHistory, 
   addToHistory, 
@@ -13,9 +13,6 @@ import {
   getFavorites,
   clearFavorites,
   removeFromFavorites,
-  getCustomDoubanTags,
-  addCustomDoubanTagToStorage,
-  removeCustomDoubanTagFromStorage,
   exportSourcesData,
   importSourcesData,
   exportFullBackup,
@@ -24,9 +21,6 @@ import {
   getAccelerationConfig,
   setAccelerationConfig
 } from '../utils/storage';
-
-const ORIGINAL_MOVIE_TAGS = ['热门', '最新', '经典', '豆瓣高分', '冷门佳片', '华语', '欧美', '韩国', '日本', '动作', '喜剧', '爱情', '科幻', '悬疑', '恐怖', '治愈'];
-const ORIGINAL_TV_TAGS = ['热门', '美剧', '英剧', '韩剧', '日剧', '国产剧', '港剧', '日本动画', '综艺', '纪录片'];
 
 const REMOTE_SOURCE_PRESETS = [
     { name: '默认采集源', url: 'https://a.wokaotianshi.eu.org/jgcj/zcying.json' },
@@ -75,10 +69,6 @@ const Home: React.FC<ExtendedHomeProps> = ({
   const [newSourceName, setNewSourceName] = useState('');
   const [newSourceApi, setNewSourceApi] = useState('');
 
-  const [customDoubanTags, setCustomDoubanTags] = useState<string[]>([]);
-  const [showAddTag, setShowAddTag] = useState(false);
-  const [newTagName, setNewTagName] = useState('');
-
   // 设置页面管理状态
   const [selectedApis, setSelectedApis] = useState<Set<string>>(new Set());
   const [isCheckingSources, setIsCheckingSources] = useState(false);
@@ -98,13 +88,7 @@ const Home: React.FC<ExtendedHomeProps> = ({
   const [copiedUrl, setCopiedUrl] = useState<string | null>(null);
 
   useEffect(() => {
-    if (mode === 'DOUBAN') {
-      const tags = getCustomDoubanTags(savedState.doubanType);
-      setCustomDoubanTags(tags);
-      if (savedState.doubanMovies.length === 0) {
-        loadDoubanData(savedState.doubanType, savedState.doubanTag, 0);
-      }
-    } else if (mode === 'SOURCE') {
+    if (mode === 'SOURCE') {
       // 只有在数据为空或源API变更时才触发加载，避免切换回SOURCE时重新加载
       if (currentSource.api && (currentSource.api !== savedState.sourceApi || savedState.movies.length === 0)) {
         onStateUpdate({
@@ -122,7 +106,7 @@ const Home: React.FC<ExtendedHomeProps> = ({
       setFavorites(getFavorites());
     }
     setHistory(getHistory());
-  }, [currentSource.api, mode, savedState.doubanType, savedState.doubanTag]);
+  }, [currentSource.api, mode]);
 
   useLayoutEffect(() => {
     if (mode === 'SOURCE' && !savedState.loading && savedState.scrollY > 0) {
@@ -147,20 +131,6 @@ const Home: React.FC<ExtendedHomeProps> = ({
             sourceApi: apiUrl
         });
     } catch (e) { onStateUpdate({ error: true, loading: false }); }
-  };
-
-  const loadDoubanData = async (type: 'movie' | 'tv', tag: string, start: number) => {
-    // 豆瓣加载逻辑：只操作 doubanLoading/doubanError
-    onStateUpdate({ doubanLoading: true, doubanError: false });
-    try {
-      const results = await fetchDoubanSubjects(type, tag, start);
-      onStateUpdate({ 
-          doubanMovies: start === 0 ? results : [...savedState.doubanMovies, ...results], 
-          doubanLoading: false 
-      });
-    } catch (e) { 
-        onStateUpdate({ doubanLoading: false, doubanError: true }); 
-    }
   };
 
   const handleMovieClick = (movie: Movie) => {
@@ -380,15 +350,6 @@ const Home: React.FC<ExtendedHomeProps> = ({
     }
   };
 
-  const handleRemoveTag = (tag: string) => {
-    const updated = removeCustomDoubanTagFromStorage(savedState.doubanType, tag);
-    setCustomDoubanTags(updated);
-    if (savedState.doubanTag === tag) {
-      const defaultTag = savedState.doubanType === 'movie' ? ORIGINAL_MOVIE_TAGS[0] : ORIGINAL_TV_TAGS[0];
-      onStateUpdate({ doubanTag: defaultTag, doubanMovies: [] });
-    }
-  };
-
   const handleClearFavs = () => {
     if (confirmClearFav) {
       clearFavorites();
@@ -404,28 +365,6 @@ const Home: React.FC<ExtendedHomeProps> = ({
     e.stopPropagation();
     removeFromFavorites(id);
     setFavorites(getFavorites());
-  };
-
-  const handleAddTagSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (newTagName.trim()) {
-      const updated = addCustomDoubanTagToStorage(savedState.doubanType, newTagName.trim());
-      setCustomDoubanTags(updated);
-      setNewTagName('');
-      setShowAddTag(false);
-    }
-  };
-
-  // 辅助函数：处理类型切换
-  const handleDoubanTypeChange = (type: 'movie' | 'tv') => {
-      if (savedState.doubanType !== type) {
-          const defaultTag = type === 'movie' ? ORIGINAL_MOVIE_TAGS[0] : ORIGINAL_TV_TAGS[0];
-          onStateUpdate({ 
-              doubanType: type, 
-              doubanTag: defaultTag, 
-              doubanMovies: [] 
-          });
-      }
   };
   
   return (
@@ -795,8 +734,8 @@ const Home: React.FC<ExtendedHomeProps> = ({
         </section>
       ) : (
         <>
-          {mode !== 'FAVORITE' && (
-            // 只有源站模式才显示源站分类，豆瓣分类已集成到 DoubanList 组件中
+          {mode !== 'FAVORITE' && mode !== 'DOUBAN' && (
+            // 源站模式：显示分类
             mode === 'SOURCE' && (
                 <nav className="mb-8 overflow-x-auto hide-scrollbar">
                     <div className="flex flex-wrap gap-2">
@@ -809,7 +748,8 @@ const Home: React.FC<ExtendedHomeProps> = ({
             )
           )}
 
-          {history.length > 0 && mode !== 'FAVORITE' && mode !== 'DOUBAN' && (
+          {/* 历史记录条 (仅在源站模式显示，避免豆瓣模式太杂乱) */}
+          {history.length > 0 && mode === 'SOURCE' && (
             <section className="mb-10">
               <div className="flex items-center justify-between mb-4"><h2 className="text-lg font-bold flex items-center gap-2"><Icon name="history" className="text-blue-500" /> 播放历史</h2><button onClick={() => { if(confirmClear){ clearHistory(); setHistory([]); setConfirmClear(false); } else { setConfirmClear(true); setTimeout(()=>setConfirmClear(false), 3000); } }} className="text-xs text-gray-400 hover:text-red-500 flex items-center gap-1"><Icon name={confirmClear ? "warning" : "delete_outline"} className="text-sm" />{confirmClear ? "确认清除" : "清空"}</button></div>
               <div className="flex gap-4 overflow-x-auto pb-4 hide-scrollbar">
@@ -844,21 +784,11 @@ const Home: React.FC<ExtendedHomeProps> = ({
             </div>
 
             {mode === 'DOUBAN' ? (
-                // 独立的豆瓣列表组件，集成导航与网格
-                <DoubanList 
-                    movies={savedState.doubanMovies}
-                    loading={savedState.doubanLoading}
-                    error={savedState.doubanError}
-                    type={savedState.doubanType}
-                    tag={savedState.doubanTag}
-                    customTags={customDoubanTags}
-                    onTypeChange={handleDoubanTypeChange}
-                    onTagChange={(tag) => onStateUpdate({ doubanTag: tag, doubanMovies: [] })}
-                    onAddTag={() => setShowAddTag(true)}
-                    onRemoveTag={handleRemoveTag}
-                    onLoadMore={() => loadDoubanData(savedState.doubanType, savedState.doubanTag, savedState.doubanMovies.length)}
-                    onRetry={() => loadDoubanData(savedState.doubanType, savedState.doubanTag, 0)}
-                    onMovieClick={handleMovieClick}
+                // 独立的豆瓣模块，接管所有豆瓣逻辑
+                <DoubanModule 
+                    state={savedState}
+                    onUpdate={onStateUpdate}
+                    onSelectMovie={handleMovieClick}
                 />
             ) : mode === 'FAVORITE' ? (
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-x-4 gap-y-10 sm:gap-x-6">
@@ -904,25 +834,6 @@ const Home: React.FC<ExtendedHomeProps> = ({
                 </div>
                 <div className="flex gap-3 mt-8"><button type="button" onClick={() => setShowAddSource(false)} className="flex-1 px-4 py-3 rounded-xl text-sm font-bold text-gray-500 hover:bg-gray-100">取消</button><button type="submit" className="flex-1 px-4 py-3 rounded-xl text-sm font-bold bg-blue-600 text-white shadow-lg">确认添加</button></div>
             </form></div>
-      )}
-
-      {showAddTag && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center px-4">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowAddTag(false)}></div>
-          <form onSubmit={handleAddTagSubmit} className="relative bg-white dark:bg-slate-800 rounded-3xl p-8 w-full max-w-md shadow-2xl border border-gray-200 dark:border-gray-700">
-            <h3 className="text-xl font-bold dark:text-white mb-6 flex items-center gap-2"><Icon name="new_label" className="text-pink-500" />添加自定义标签</h3>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-gray-400 uppercase mb-1 ml-1">标签名称</label>
-                <input autoFocus required type="text" placeholder="例如：宫崎骏" className="w-full bg-gray-50 dark:bg-slate-900 border-gray-200 dark:border-gray-700 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-pink-500 transition-all dark:text-white" value={newTagName} onChange={e => setNewTagName(e.target.value)}/>
-              </div>
-            </div>
-            <div className="flex gap-3 mt-8">
-              <button type="button" onClick={() => setShowAddTag(false)} className="flex-1 px-4 py-3 rounded-xl text-sm font-bold text-gray-500 hover:bg-gray-100">取消</button>
-              <button type="submit" className="flex-1 px-4 py-3 rounded-xl text-sm font-bold bg-pink-600 text-white shadow-lg">确认添加</button>
-            </div>
-          </form>
-        </div>
       )}
       
       <style>{`
