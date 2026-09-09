@@ -32,6 +32,23 @@ export const fetchViaProxy = async (targetUrl: string, externalSignal?: AbortSig
   // 增加超时时间到 15s，防止网络波动导致的 signal aborted
   const TIMEOUT_MS = 15000;
 
+  // 0) 优先直连：多数资源站 API 支持 CORS（Access-Control-Allow-Origin: *）且网络可达，
+  //    直连比公共代理更快更稳。直连失败（CORS/超时）自动回退到下方代理链。
+  if (targetUrl.startsWith('https://') || targetUrl.startsWith('http://')) {
+    try {
+      const directCtrl = new AbortController();
+      const directTimer = setTimeout(() => directCtrl.abort(), 8000);
+      const directResp = await fetch(targetUrl, { signal: directCtrl.signal });
+      clearTimeout(directTimer);
+      if (directResp.ok) {
+        const directText = await directResp.text();
+        if (directText && directText.trim().length > 0) return directText;
+      }
+    } catch (e) {
+      lastError = e; // 直连不可用（CORS 拒绝/网络不通），继续走代理链
+    }
+  }
+
   for (const proxy of PROXIES) {
     if (externalSignal?.aborted) throw new Error("Aborted");
     
@@ -73,12 +90,11 @@ export const fetchViaProxy = async (targetUrl: string, externalSignal?: AbortSig
              } catch(e) {}
           }
 
-          if (text && text.trim().length > 0) {
-            // 简单的 HTML 检测，防止代理返回错误页面
+            if (text && text.trim().length > 0) {
+            // 资源站 API 的合法响应是 XML/JSON；代理返回 HTML 一律是错误页（500/522/网关页），必须丢弃换下一个代理
             if (text.trim().toLowerCase().startsWith('<!doctype html') || text.trim().toLowerCase().startsWith('<html')) {
-               if (!targetUrl.includes('ac=list') && !targetUrl.includes('ac=detail') && !targetUrl.includes('douban.com')) {
-                   throw new Error("Proxy returned HTML instead of data");
-               }
+               if (targetUrl.includes('douban.com')) return text; // 豆瓣网页数据本身是 HTML
+               throw new Error("Proxy returned HTML error page");
             }
             return text;
           }
