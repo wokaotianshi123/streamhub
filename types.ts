@@ -81,6 +81,8 @@ export interface PlayerProps {
   currentSource: Source;
   sources: Source[]; 
   onSelectMovie: (movie: Movie) => void;
+  /** 点击卡片时携带的列表数据，详情接口失败时可作为兜底展示，避免空白 */
+  initialMovie?: Movie | null;
 }
 
 export interface SearchProps {

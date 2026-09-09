@@ -63,6 +63,7 @@ const App: React.FC = () => {
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedMovieId, setSelectedMovieId] = useState<string>('');
+  const [selectedMovie, setSelectedMovie] = useState<Movie | null>(null);
   
   const [defaultSources, setDefaultSources] = useState<Source[]>([]);
   const [customSources, setCustomSources] = useState<Source[]>([]);
@@ -181,6 +182,7 @@ const App: React.FC = () => {
 
   const handleSelectMovie = (movie: Movie) => {
     setSelectedMovieId(movie.id);
+    setSelectedMovie(movie);
     const targetSource = sources.find(s => s.api === movie.sourceApi) || 
                         (movie.sourceApi ? { name: movie.sourceName || '资源源', api: movie.sourceApi } : null);
     const activeSource = targetSource || currentSource;
@@ -271,7 +273,7 @@ const App: React.FC = () => {
       case 'SEARCH':
         return <Search setView={handleViewChange} query={searchQuery} onSelectMovie={handleSelectMovie} currentSource={currentSource} sources={sources} onSourceChange={handleSourceChange} savedState={searchViewState} onStateUpdate={updateSearchState} />;
       case 'PLAYER':
-        return <Player setView={handleViewChange} movieId={selectedMovieId} currentSource={playbackSource || currentSource} sources={sources} onSelectMovie={handleSelectMovie} />;
+        return <Player setView={handleViewChange} movieId={selectedMovieId} currentSource={playbackSource || currentSource} sources={sources} onSelectMovie={handleSelectMovie} initialMovie={selectedMovie} />;
       default: return null;
     }
   };

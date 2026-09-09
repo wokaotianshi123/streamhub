@@ -5,4 +5,5 @@
 npm install --save-dev electron electron-builder concurrently wait-on cross-env
 
 第三步：打包成软件 (.exe / .dmg)
-npm run electron:build
+光打包网页版 npm run build:single
+打包exe  npm run electron:build

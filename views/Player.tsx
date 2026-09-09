@@ -213,7 +213,7 @@ const ControlButton: React.FC<{
 
 type UpscaleLevel = 'off' | 'low';
 
-const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource, sources, onSelectMovie }) => {
+const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource, sources, onSelectMovie, initialMovie }) => {
   const [details, setDetails] = useState<Movie | null>(null);
   const [playList, setPlayList] = useState<{name: string, url: string}[]>([]);
   const [currentUrl, setCurrentUrl] = useState<string>('');
@@ -328,9 +328,10 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource, source
       historyTimeRef.current = (historyItem?.currentTime && historyItem.currentTime > 5) ? historyItem.currentTime : 0;
 
       const data = await fetchVideoDetails(currentSource.api, movieId);
-      if (data) {
-        setDetails(data);
-        const parsedEpisodes = parsePlayUrl(data.vod_play_url || '');
+      const effective = data || (initialMovie && initialMovie.id === movieId ? initialMovie : null);
+      if (effective) {
+        setDetails(effective);
+        const parsedEpisodes = parsePlayUrl(effective.vod_play_url || '');
         setPlayList(parsedEpisodes);
         
         if (historyItem?.currentEpisodeUrl) {
@@ -347,7 +348,7 @@ const Player: React.FC<PlayerProps> = ({ setView, movieId, currentSource, source
       setLoading(false);
     };
     if (movieId) loadDetails();
-  }, [movieId, currentSource.api]);
+  }, [movieId, currentSource.api, initialMovie]);
 
   const startAltSearch = () => {
       if (!details) return;

@@ -24,6 +24,12 @@ export default defineConfig({
     outDir: 'dist',
     target: 'es2015',
     minify: 'terser',
+    rollupOptions: {
+      // 强制所有代码打进单一 chunk，配合 build-inline.mjs 内联后可 file:// 直接打开
+      output: {
+        inlineDynamicImports: true
+      }
+    }
   },
   server: {
     proxy: {
