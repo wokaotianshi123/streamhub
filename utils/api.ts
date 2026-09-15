@@ -255,12 +255,6 @@ const DEFAULT_SOURCES = [
     "useInSearchAll": true
   },
   {
-    "key": "旺旺资源网采集接口",
-    "name": "旺旺资源网采集接口",
-    "api": "https://cfkua.wokaotianshi.eu.org/https://api.wwzy.tv/api.php/provide/vod/at/xml",
-    "useInSearchAll": true
-  },
-  {
     "key": "如意资源网采集接口",
     "name": "如意资源网采集接口",
     "api": "https://cfkua.wokaotianshi.eu.org/https://cj.rycjapi.com/api.php/provide/vod/at/xml",
